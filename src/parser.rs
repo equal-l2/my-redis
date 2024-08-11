@@ -134,6 +134,7 @@ impl Parser {
         }
     }
 
+    // TODO: fix partial response parsing
     fn parse_resp(&mut self) {
         // check type
         match self.bytes_buffer.pop_front() {

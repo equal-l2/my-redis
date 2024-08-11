@@ -1,6 +1,4 @@
-use std::io::Read;
-use std::net::TcpListener;
-use std::net::TcpStream;
+use tokio::io::AsyncWriteExt;
 
 mod executor;
 mod parser;
@@ -13,18 +11,22 @@ thread_local! {
     static EXECUTOR: std::cell::RefCell<Executor> = std::cell::RefCell::new(Executor::new());
 }
 
-fn handle_stream(mut stream: TcpStream) {
+async fn handle_stream(mut stream: tokio::net::TcpStream) {
     let mut buffer = [0; 1024];
     let mut parser = Parser::new();
     let mut stop = false;
 
     while !stop {
-        match stream.read(&mut buffer) {
+        stream.readable().await.unwrap();
+        match stream.try_read(&mut buffer) {
             Ok(0) => {
                 stop = true;
             }
             Ok(n) => {
                 parser.extend(&buffer[..n]);
+            }
+            Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {
+                continue;
             }
             Err(e) => {
                 println!("Error reading from client: {}", e);
@@ -37,23 +39,25 @@ fn handle_stream(mut stream: TcpStream) {
 
         // execute
         while let Some(arr) = parser.pop() {
-            EXECUTOR.with_borrow_mut(|ex| ex.execute(arr, &mut stream));
+            let result = EXECUTOR.with_borrow_mut(|ex| ex.execute(arr));
+            stream.write_all(&result).await.unwrap();
         }
     }
 }
 
 fn main() {
-    let listener = TcpListener::bind("127.0.0.1:7379").unwrap();
-    for stream in listener.incoming() {
-        println!("new connection: {:?}", stream);
-        match stream {
-            Ok(stream) => {
-                println!("New client connected");
-                handle_stream(stream);
+    tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:7379")
+                .await
+                .unwrap();
+
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                tokio::spawn(async move { handle_stream(stream).await });
             }
-            Err(e) => {
-                println!("Error accepting client: {}", e);
-            }
-        }
-    }
+        })
 }

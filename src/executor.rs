@@ -80,7 +80,7 @@ impl Executor {
         }
     }
 
-    pub fn execute(&mut self, arr: Value, output: &mut impl std::io::Write) {
+    pub fn execute(&mut self, arr: Value) -> Vec<u8> {
         assert!(matches!(arr, Value::Array(_)));
 
         let items = match arr {
@@ -116,7 +116,7 @@ impl Executor {
             }
             _ => b"-ERR invalid request\r\n".as_slice(),
         };
-        output.write_all(msg).unwrap();
+        msg.to_vec()
     }
 
     fn get(&self, key: &Value) -> Value {

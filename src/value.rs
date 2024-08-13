@@ -7,6 +7,7 @@ pub enum Value {
     Array(Vec<Value>),
     NullBulkString,
     NullArray,
+    Ok,
 }
 
 impl Value {
@@ -35,12 +36,23 @@ impl Value {
             }
             Value::NullBulkString => b"$-1\r\n".to_vec(),
             Value::NullArray => b"*-1\r\n".to_vec(),
+            Value::Ok => b"+OK\r\n".to_vec(),
         }
     }
 
-    pub fn as_bulkstr(&self) -> Option<&[u8]> {
+    pub fn to_bulkstr(&self) -> Option<&[u8]> {
         match self {
             Value::BulkString(ref v) => Some(v.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub fn to_usize(&self) -> Option<usize> {
+        match self {
+            Value::Integer(i) => Some(*i as usize),
+            Value::BulkString(s) | Value::SimpleString(s) => std::str::from_utf8(s)
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok()),
             _ => None,
         }
     }

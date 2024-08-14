@@ -14,7 +14,18 @@ thread_local! {
 }
 
 async fn handle_stream(mut stream: TcpStream) {
-    let mut handle = INSTANCE.with(|inner| inner.get().unwrap().get_handle());
+    let handle_opt =
+        INSTANCE.with(|inner| inner.get().unwrap().connect(stream.peer_addr().unwrap()));
+    let mut handle = if let Some(handle) = handle_opt {
+        handle
+    } else {
+        stream
+            .write_all(b"-ERR connection full, try again\r\n")
+            .await
+            .unwrap();
+        stream.shutdown(std::net::Shutdown::Both).unwrap();
+        return;
+    };
     let mut buffer = [0; 1024];
     let mut parser = Parser::new();
     let mut stop = false;

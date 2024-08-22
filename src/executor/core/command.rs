@@ -44,23 +44,49 @@ thread_local! {
             arity_min: 0,
             arity_max: Some(1),
             handler: &move |_, _, input| {
-                if let Some(msg) = input.first().and_then(|v| v.to_bulkstr()) {
+                if let Some(msg) = get_first(input).into_bulkstr() {
                     Value::BulkString(msg.to_owned())
                 } else {
                     Value::SimpleString("PONG".as_bytes().to_owned())
                 }
             }
         });
+        map.insert("echo", Command {
+            arity_min: 0,
+            arity_max: Some(1),
+            handler: &move |_, _, input| {
+                if let Some(msg) = get_first(input).into_bulkstr() {
+                    Value::BulkString(msg.to_owned())
+                } else {
+                    Value::Error(b"ERR invalid argument for 'echo'".to_vec())
+                }
+            }
+        });
         map.insert("get", Command{
             arity_min: 1,
             arity_max: Some(1),
-            handler:&move |ex, id, input| ex.get_db(id).get(&input[0])
+            handler:&move |ex, id, input| {
+                if let Some(k) = get_first(input).into_bulkstr()  {
+                    ex.get_db(id).get(&k)
+                } else {
+                    Value::Error(b"ERR invalid argument for 'get'".to_vec())
+                }
+            }
         });
         map.insert("set", Command{
             arity_min: 2,
             arity_max: Some(5),
             // TODO: support options
-            handler:&move |ex, id, input| ex.get_db(id).set(&input[0], &input[1])
+            handler:&move |ex, id, input| {
+                let mut args = input.into_iter();
+                let key = args.next().unwrap().into_bulkstr();
+                let value = args.next().unwrap().into_bulkstr();
+                if let (Some(k), Some(v)) = (key, value) {
+                    ex.get_db(id).set(&k, v)
+                } else {
+                    Value::Error(b"ERR wrong argument type for 'set'".to_vec())
+                }
+            }
         });
         map.insert("command", Command {
             arity_min: 0,
@@ -69,11 +95,11 @@ thread_local! {
                 match input.len() {
                     0 => Value::Error(b"ERR unknown command 'command'".to_vec()), // TODO: implement "command" command
                     1 => {
-                        let sub = input[0].to_bulkstr();
+                        let sub = get_first(input).into_bulkstr();
                         // TODO: implement other subcommands
                         match sub {
                             Some(sub) if sub == b"count" => {
-                                Value::Integer(COMMANDS.with(|t| t.len() as u64))
+                                Value::Integer(COMMANDS.with(|t| t.len() as i64))
                             }
                             _ => {
                                 // other subcommands for "command"
@@ -89,8 +115,11 @@ thread_local! {
             arity_min: 1,
             arity_max: Some(1),
             handler: &move |ex, id, input| {
-                let mut args = input.into_iter();
-                ex.select(id, args.next().unwrap())
+                if let Some(db_index) = get_first(input).to_usize() {
+                    ex.select(id, db_index)
+                } else {
+                    Value::Error(b"ERR invalid argument for 'select'".to_vec())
+                }
             }
         });
         map.insert("flushdb", Command {
@@ -101,34 +130,186 @@ thread_local! {
                 ex.get_db(id).flushdb()
             }
         });
+        map.insert("flushall", Command {
+            arity_min: 0,
+            arity_max: Some(0),
+            handler: &move |ex, _, _| {
+                // TODO: support async
+                ex.flushall()
+            }
+        });
         map.insert("swapdb", Command {
             arity_min: 2,
             arity_max: Some(2),
             handler: &move |ex, _, input| {
-                let mut args = input.into_iter();
-                ex.swap_db(args.next().unwrap(), args.next().unwrap())
+                let (db1, db2) = get_first_two(input);
+                let db1 = db1.to_usize();
+                let db2 = db2.to_usize();
+                match (db1, db2) {
+                    (Some(db1), Some(db2)) => ex.swap_db(db1, db2),
+                    (None, _) => Value::Error(b"ERR invalid first DB index".to_vec()),
+                    (_, None) => Value::Error(b"ERR invalid second DB index".to_vec()),
+                }
             }
         });
         map.insert("client", Command {
             arity_min: 1,
             arity_max: None,
-            handler: &move |ex, _, input| {
-            match input.len() {
-                0 => unreachable!(),
-                1 => match input[0].to_bulkstr() {
-                    Some(sub) if sub == b"list" => {
-                        // TODO: support options
-                        ex.client_list()
+            handler: &move |ex, id, input| {
+                match input.len() {
+                    0 => unreachable!(),
+                    1 => {
+                        let sub = get_first(input).into_bulkstr();
+                        if let Some(s) = sub {
+                            match s.as_slice() {
+                                b"id" => {
+                                    let id_least_digit = id.iter_u64_digits().next().unwrap();
+                                    Value::Integer(if id_least_digit > i64::MAX as u64 {
+                                        i64::MAX
+                                    } else {
+                                        id_least_digit as i64
+                                    })
+                                }
+                                b"list" => {
+                                // TODO: support options
+                                    ex.client_list()
+                                }
+                                _ => {
+                                    // other subcommands for "client"
+                                    Value::Error(b"ERR unknown subcommand or wrong number of arguments for 'command'".to_vec())
+                                }
+                            }
+                        } else {
+                            Value::Error(b"ERR invalid argument for 'client'".to_vec())
+                        }
                     }
-                    _ => {
-                                // other subcommands for "command"
-                                Value::Error(b"ERR unknown subcommand or wrong number of arguments for 'command'".to_vec())
-                    }
+                    _ => Value::Error(b"ERR wrong number of arguments for 'command'".to_vec()), // TODO
                 }
-
-                _ => Value::Error(b"ERR wrong number of arguments for 'command'".to_vec()), // TODO
             }
-        }});
+        });
+        map.insert("dbsize", Command {
+            arity_min: 0,
+            arity_max: Some(0),
+            handler: &move |ex, id, _| {
+                Value::Integer(ex.get_db(id).len() as i64)
+            }
+        });
+        map.insert("exists", Command {
+            arity_min: 1,
+            arity_max: None,
+            handler: &move |ex, id, input| {
+                let input_validated = input.into_iter().map(|v| v.into_bulkstr()).collect::<Option<Vec<_>>>();
+                if let Some(keys) = input_validated {
+                    ex.get_db(id).exists(keys)
+                } else {
+                    Value::Error(b"ERR wrong argument type for 'exists'".to_vec())
+                }
+            }
+        });
+        map.insert("append", Command {
+            arity_min: 2,
+            arity_max: Some(2),
+            handler: &move |ex, id, input| {
+                let (key, value) = get_first_two(input);
+                let key = key.into_bulkstr();
+                let value = value.into_bulkstr();
+                if let (Some(k), Some(v)) = (key, value) {
+                    ex.get_db(id).append(&k, v)
+                } else {
+                    Value::Error(b"ERR invalid argument for 'append'".to_vec())
+                }
+            }
+        });
+        map.insert("incr", Command {
+            arity_min: 1,
+            arity_max: Some(1),
+            handler: &move |ex, id, input| {
+                let key = get_first(input).into_bulkstr();
+                if let Some(k) = key {
+                    ex.get_db(id).incr_by(&k, 1)
+                } else {
+                    Value::Error(b"ERR invalid argument for 'incr'".to_vec())
+                }
+            }
+        });
+        map.insert("decr", Command {
+            arity_min: 1,
+            arity_max: Some(1),
+            handler: &move |ex, id, input| {
+                let key = get_first(input).into_bulkstr();
+                if let Some(k) = key {
+                    ex.get_db(id).decr_by(&k, 1)
+                } else {
+                    Value::Error(b"ERR invalid argument for 'decr'".to_vec())
+                }
+            }
+        });
+        map.insert("incrby", Command {
+            arity_min: 1,
+            arity_max: Some(1),
+            handler: &move |ex, id, input| {
+                let (key, value) = get_first_two(input);
+                let key = key.into_bulkstr();
+                let value = value.to_i64();
+                if let (Some(k), Some(v)) = (key, value) {
+                    ex.get_db(id).incr_by(&k, v)
+                } else {
+                    Value::Error(b"ERR invalid argument for 'incrby'".to_vec())
+                }
+            }
+        });
+        map.insert("decrby", Command {
+            arity_min: 1,
+            arity_max: Some(1),
+            handler: &move |ex, id, input| {
+                let (key, value) = get_first_two(input);
+                let key = key.into_bulkstr();
+                let value = value.to_i64();
+                if let (Some(k), Some(v)) = (key, value) {
+                    ex.get_db(id).decr_by(&k, v)
+                } else {
+                    Value::Error(b"ERR invalid argument for 'decrby'".to_vec())
+                }
+            }
+        });
+        map.insert("incrbyfloat", Command {
+            arity_min: 1,
+            arity_max: Some(1),
+            handler: &move |ex, id, input| {
+                let (key, value) = get_first_two(input);
+                let key = key.into_bulkstr();
+                let value = value.to_floating();
+                if let (Some(k), Some(v)) = (key, value) {
+                    ex.get_db(id).incr_by_float(&k, v)
+                } else {
+                    Value::Error(b"ERR invalid argument for 'incrby'".to_vec())
+                }
+            }
+        });
+        map.insert("del", Command {
+            arity_min: 1,
+            arity_max: None,
+            handler: &move |ex, id, input| {
+                let input_validated = input.into_iter().map(|v| v.into_bulkstr()).collect::<Option<Vec<_>>>();
+                if let Some(keys) = input_validated {
+                    ex.get_db(id).del(keys)
+                } else {
+                    Value::Error(b"ERR wrong argument type for 'del'".to_vec())
+                }
+            }
+        });
         map
     });
+}
+
+fn get_first(args: Vec<Value>) -> Value {
+    let mut args = args.into_iter();
+    args.next().unwrap()
+}
+
+fn get_first_two(args: Vec<Value>) -> (Value, Value) {
+    let mut args = args.into_iter();
+    let first = args.next().unwrap();
+    let second = args.next().unwrap();
+    (first, second)
 }

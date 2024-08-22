@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::value::Value;
 
-use super::id::ConnectionId;
-use super::id::ConnectionIdGenerator;
+use num_bigint::BigUint;
+use num_integer::Integer;
 use smol::net::SocketAddr;
 
 #[derive(Debug)]
@@ -12,10 +12,12 @@ pub struct ConnectionState {
     pub addr: SocketAddr,
 }
 
+pub type ConnectionId = BigUint;
+
 #[derive(Debug, Default)]
 pub struct ConnectionStore {
     data: BTreeMap<ConnectionId, ConnectionState>,
-    id_gen: ConnectionIdGenerator,
+    next_id: ConnectionId,
 }
 
 impl ConnectionState {
@@ -34,18 +36,10 @@ impl ConnectionStore {
     }
 
     pub fn connect(&mut self, addr: SocketAddr) -> Option<ConnectionId> {
-        let first = self.id_gen.peek_id().minus_one();
-        loop {
-            let con_id = self.id_gen.get_id();
-            if !self.data.contains_key(&con_id) {
-                self.data.insert(con_id.clone(), ConnectionState::new(addr));
-                return Some(con_id);
-            }
-            if con_id == first {
-                // all id is used, try again
-                return None;
-            }
-        }
+        let id = self.next_id.clone();
+        self.next_id.inc();
+        self.data.insert(id.clone(), ConnectionState::new(addr));
+        Some(id)
     }
 
     pub fn disconnect(&mut self, id: &ConnectionId) {

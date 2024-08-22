@@ -2,7 +2,7 @@
 pub enum Value {
     SimpleString(Vec<u8>),
     Error(Vec<u8>),
-    Integer(u64),
+    Integer(i64),
     BulkString(Vec<u8>),
     Array(Vec<Value>),
     NullBulkString,
@@ -40,19 +40,40 @@ impl Value {
         }
     }
 
-    pub fn to_bulkstr(&self) -> Option<&[u8]> {
+    pub fn into_bulkstr(self) -> Option<Vec<u8>> {
         match self {
-            Value::BulkString(ref v) => Some(v.as_slice()),
+            Value::BulkString(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn to_usize(&self) -> Option<usize> {
         match self {
-            Value::Integer(i) => Some(*i as usize),
-            Value::BulkString(s) | Value::SimpleString(s) => std::str::from_utf8(s)
-                .ok()
-                .and_then(|s| s.parse::<usize>().ok()),
+            Value::Integer(i) if i >= &0 => Some(*i as usize),
+            &Value::Integer(_) => None,
+            Value::BulkString(s) | Value::SimpleString(s) => {
+                std::str::from_utf8(s).ok().and_then(|s| s.parse().ok())
+            }
+            _ => None,
+        }
+    }
+
+    pub fn to_i64(&self) -> Option<i64> {
+        match self {
+            Value::Integer(i) => Some(*i),
+            Value::BulkString(s) | Value::SimpleString(s) => {
+                std::str::from_utf8(s).ok().and_then(|s| s.parse().ok())
+            }
+            _ => None,
+        }
+    }
+
+    pub fn to_floating(&self) -> Option<f64> {
+        match self {
+            &Value::Integer(i) => Some(i as f64),
+            Value::BulkString(s) | Value::SimpleString(s) => {
+                std::str::from_utf8(s).ok().and_then(|s| s.parse().ok())
+            }
             _ => None,
         }
     }

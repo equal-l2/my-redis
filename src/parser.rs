@@ -7,178 +7,157 @@ enum DataType {
     Array,
 }
 
-enum ParseMode {
-    Resp,
-    Inline,
-    Unknown,
-}
-
 pub struct Parser {
-    mode: ParseMode,
     value_buffer: Vec<Value>,
     bytes_buffer: VecDeque<u8>,
 }
 
-struct RespArrayParser<'a, 'b, I: ExactSizeIterator<Item = (usize, &'b u8)>>
+struct RespItemParser<'a, 'b, I: ExactSizeIterator<Item = &'b u8>>
 where
     'b: 'a,
 {
-    item_count: usize,
-    item_buffer: Vec<Value>,
     cursor: &'a mut I,
     _phantom: std::marker::PhantomData<&'b ()>,
 }
 
-impl<'a, 'b, I: ExactSizeIterator<Item = (usize, &'b u8)>> RespArrayParser<'a, 'b, I> {
-    fn new(item_count: usize, cursor: &'a mut I) -> Self {
-        RespArrayParser {
-            item_count,
-            item_buffer: Vec::new(),
+impl<'a, 'b, I: ExactSizeIterator<Item = &'b u8>> RespItemParser<'a, 'b, I> {
+    fn new(cursor: &'a mut I) -> Self {
+        RespItemParser {
             cursor,
             _phantom: std::marker::PhantomData,
         }
     }
 
-    fn parse(mut self) -> Option<(Value, usize)> {
-        let mut last_i = 0;
-        for _ in 0..self.item_count {
-            match self.parse_item() {
-                Some((v, i)) => {
-                    last_i = i;
-                    self.item_buffer.push(v);
-                }
-                None => return None,
-            }
-        }
-        Some((Value::Array(self.item_buffer), last_i))
-    }
-
-    fn parse_item(&mut self) -> Option<(Value, usize)> {
-        let data_type = match self.cursor.next()?.1 {
-            b'*' => DataType::Array,
+    fn parse(&mut self) -> Option<Result<Value, Value>> {
+        let data_type = match self.cursor.next()? {
+            // without len
+            b'+' => todo!("simple string"),
+            b'-' => todo!("error"),
+            b':' => todo!("integer"),
+            // with len
             b'$' => DataType::BulkString,
-            _ => todo!("neither array nor bulk string"),
+            b'*' => DataType::Array,
+            // unsupported
+            _ => return Some(Err(Value::Error(b"ERR invalid data type".to_vec()))),
         };
 
+        // TODO: handle types without len?
         // read length
-        let mut len_buffer = Vec::<u8>::new();
+        let mut len_buffer = Vec::new();
         loop {
-            match self.cursor.next()?.1 {
+            match self.cursor.next()? {
                 b'\r' => {
-                    let tmp = self.cursor.next()?.1;
+                    let tmp = self.cursor.next()?;
                     match tmp {
                         b'\n' => {
                             break;
                         }
-                        _ => todo!("invalid length string"),
+                        _ => {
+                            return Some(Err(Value::Error(
+                                b"ERR invalid character in length".to_vec(),
+                            )))
+                        }
                     }
                 }
-                ch => len_buffer.push(*ch),
+                ch @ b'0'..=b'9' | ch @ b'-' => len_buffer.push(*ch),
+                _ => {
+                    return Some(Err(Value::Error(
+                        b"ERR invalid character in length".to_vec(),
+                    )))
+                }
             }
         }
-        let len_str = std::str::from_utf8(&len_buffer).expect("TODO: check UTF-8 decode error");
-        let len = len_str.parse::<usize>().expect("TODO: number parse error");
-
-        return match data_type {
-            DataType::Array => {
-                let subparser = RespArrayParser::new(len, self.cursor);
-                subparser.parse()
-            }
-            DataType::BulkString => {
-                if self.cursor.len() < len + 2 {
-                    // not enough length for "<data>\r\n"
-                    None
+        let len_str =
+            std::str::from_utf8(&len_buffer).expect("the buffer should only contains 0~9 and -");
+        let len = match len_str.parse::<i64>() {
+            Ok(len) => {
+                if len < -1 {
+                    return Some(Err(Value::Error(
+                        b"ERR negative length is not supported".to_vec(),
+                    )));
                 } else {
-                    let mut bs_buffer = Vec::<u8>::with_capacity(len);
-                    for _ in 0..len {
-                        bs_buffer.push(*self.cursor.next()?.1);
-                    }
-                    let (i, ch) = self.cursor.next()?;
-                    assert_eq!(ch, &b'\r');
-                    assert_eq!(self.cursor.next()?.1, &b'\n');
-                    Some((Value::BulkString(bs_buffer), i + 2))
+                    len
                 }
             }
+            _ => return Some(Err(Value::Error(b"ERR invalid length".to_vec()))),
         };
+
+        match data_type {
+            DataType::Array => {
+                if len == -1 {
+                    return Some(Ok(Value::NullArray));
+                }
+
+                let mut item_buffer = Vec::with_capacity(len as usize);
+                for _ in 0..len {
+                    let mut subparser = RespItemParser::new(self.cursor);
+                    match subparser.parse()? {
+                        Ok(v) => item_buffer.push(v),
+                        Err(e) => return Some(Err(e)),
+                    }
+                }
+
+                Some(Ok(Value::Array(item_buffer)))
+            }
+            DataType::BulkString => {
+                if len == -1 {
+                    return Some(Ok(Value::NullBulkString));
+                }
+
+                if self.cursor.len() < (len + 2) as usize {
+                    // not enough length for "<data>\r\n"
+                    return None;
+                }
+
+                let mut bs_buffer = Vec::<u8>::with_capacity(len as usize);
+                for _ in 0..len {
+                    bs_buffer.push(*self.cursor.next()?);
+                }
+
+                if self.cursor.next()? != &b'\r' {
+                    return Some(Err(Value::Error(b"ERR expected '\\r'".to_vec())));
+                };
+                if self.cursor.next()? != &b'\n' {
+                    return Some(Err(Value::Error(b"ERR expected '\\n'".to_vec())));
+                };
+
+                Some(Ok(Value::BulkString(bs_buffer)))
+            }
+        }
     }
 }
 
 impl Parser {
     pub fn new() -> Self {
         Parser {
-            mode: ParseMode::Unknown,
             value_buffer: Vec::new(),
             bytes_buffer: VecDeque::new(),
         }
     }
 
-    pub fn parse(&mut self) {
+    pub fn parse(&mut self) -> Option<Value> {
+        assert!(!self.bytes_buffer.is_empty());
         // TODO: pipeline support
-        if self.bytes_buffer.is_empty() {
-            return;
-        }
 
-        if matches!(self.mode, ParseMode::Unknown) {
-            // front() is always Some as we already checked buffer is not empty
-            let ch = self.bytes_buffer.front().unwrap();
-            self.mode = if ch == &b'*' {
-                ParseMode::Resp
-            } else {
-                ParseMode::Inline
-            };
-        }
+        match self.bytes_buffer.front().unwrap() {
+            &b'*' => {
+                // RESP
+                let mut cursor = self.bytes_buffer.iter();
+                let original_len = cursor.len();
+                let mut parser = RespItemParser::new(&mut cursor);
 
-        match self.mode {
-            ParseMode::Resp => self.parse_resp(),
-            ParseMode::Inline => self.parse_inline(),
-            ParseMode::Unknown => unreachable!(),
-        };
-    }
-
-    // TODO: fix partial response parsing
-    fn parse_resp(&mut self) -> Option<()> {
-        let mut cursor = self.bytes_buffer.iter().enumerate().peekable();
-        // check type
-        match cursor.next()?.1 {
-            b'*' => {}
-            b'$' => todo!("bulk string outside of array"),
-            _ => todo!("neither array nor bulk string"),
-        };
-
-        // read length
-        let mut len_buffer = Vec::new();
-        loop {
-            match cursor.next()?.1 {
-                b'\r' => {
-                    let tmp = cursor.next()?.1;
-                    match tmp {
-                        b'\n' => {
-                            break;
-                        }
-                        ch => todo!("invalid length string, encountered {}", ch),
+                match parser.parse()? {
+                    Ok(v) => {
+                        self.value_buffer.push(v);
+                        let used = original_len - cursor.len();
+                        self.bytes_buffer.drain(..used);
+                        None
                     }
+                    Err(e) => Some(e),
                 }
-                ch => len_buffer.push(*ch),
             }
+            _ => Some(Value::Error(b"ERR only RESP2 is supported".to_vec())),
         }
-        let len_str = std::str::from_utf8(&len_buffer).expect("TODO: check UTF-8 decode error");
-        let len = len_str.parse::<usize>().expect("TODO: number parse error");
-
-        let value = {
-            let subparser = RespArrayParser::new(len, &mut cursor);
-            subparser.parse()
-        };
-
-        if let Some((arr, used)) = value {
-            self.value_buffer.push(arr);
-            self.bytes_buffer.drain(..used);
-        };
-
-        Some(())
-    }
-
-    fn parse_inline(&mut self) -> Option<()> {
-        todo!("inline command is not implemented yet");
     }
 
     pub fn pop(&mut self) -> Option<Value> {

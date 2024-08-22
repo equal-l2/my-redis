@@ -4,6 +4,7 @@ use crate::value::Value;
 
 pub struct Command {
     pub handler: &'static (dyn Fn(&mut ExecutorImpl, ConnectionId, Vec<Value>) -> Value + 'static),
+    category: &'static [&'static str],
     arity_min: usize,
     arity_max: Option<usize>,
 }
@@ -43,6 +44,7 @@ thread_local! {
         map.insert("ping", Command {
             arity_min: 0,
             arity_max: Some(1),
+            category: &["fast", "connection"],
             handler: &move |_, _, input| {
                 if let Some(msg) = input.into_iter().next().and_then(|v| v.into_bulkstr()) {
                     Value::BulkString(msg)
@@ -54,6 +56,7 @@ thread_local! {
         map.insert("echo", Command {
             arity_min: 1,
             arity_max: Some(1),
+            category: &["fast", "connection"],
             handler: &move |_, _, input| {
                 if let Some(msg) = get_first(input).into_bulkstr() {
                     Value::BulkString(msg.to_owned())
@@ -65,6 +68,7 @@ thread_local! {
         map.insert("get", Command{
             arity_min: 1,
             arity_max: Some(1),
+            category: &["read", "string", "fast"],
             handler:&move |ex, id, input| {
                 if let Some(k) = get_first(input).into_bulkstr()  {
                     ex.get_db(id).get(&k)
@@ -76,6 +80,7 @@ thread_local! {
         map.insert("set", Command{
             arity_min: 2,
             arity_max: Some(5),
+            category: &["write", "string", "slow"],
             // TODO: support options
             handler:&move |ex, id, input| {
                 let mut args = input.into_iter();
@@ -91,6 +96,7 @@ thread_local! {
         map.insert("command", Command {
             arity_min: 0,
             arity_max: None,
+            category: &["slow", "connection"],
             handler: &move |_, _, input| {
                 match input.len() {
                     0 => Value::Error(b"ERR unknown command 'command'".to_vec()), // TODO: implement "command" command
@@ -114,6 +120,7 @@ thread_local! {
         map.insert("select", Command {
             arity_min: 1,
             arity_max: Some(1),
+            category: &["fast", "connection"],
             handler: &move |ex, id, input| {
                 if let Some(db_index) = get_first(input).to_usize() {
                     ex.select(id, db_index)
@@ -125,6 +132,7 @@ thread_local! {
         map.insert("flushdb", Command {
             arity_min: 0,
             arity_max: Some(0),
+            category: &["keyspace", "write", "slow", "dangerous"],
             handler: &move |ex, id, _| {
                 // TODO: support async
                 ex.get_db(id).flushdb()
@@ -133,6 +141,7 @@ thread_local! {
         map.insert("flushall", Command {
             arity_min: 0,
             arity_max: Some(0),
+            category: &["keyspace", "write", "slow", "dangerous"],
             handler: &move |ex, _, _| {
                 // TODO: support async
                 ex.flushall()
@@ -141,6 +150,7 @@ thread_local! {
         map.insert("swapdb", Command {
             arity_min: 2,
             arity_max: Some(2),
+            category: &["keyspace", "write", "fast", "dangerous"],
             handler: &move |ex, _, input| {
                 let (db1, db2) = get_first_two(input);
                 let db1 = db1.to_usize();
@@ -155,6 +165,7 @@ thread_local! {
         map.insert("client", Command {
             arity_min: 1,
             arity_max: None,
+            category: &["slow"],
             handler: &move |ex, id, input| {
                 match input.len() {
                     0 => unreachable!(),
@@ -190,6 +201,7 @@ thread_local! {
         map.insert("dbsize", Command {
             arity_min: 0,
             arity_max: Some(0),
+            category: &["keyspace", "read", "fast"],
             handler: &move |ex, id, _| {
                 Value::Integer(ex.get_db(id).len() as i64)
             }
@@ -197,6 +209,7 @@ thread_local! {
         map.insert("exists", Command {
             arity_min: 1,
             arity_max: None,
+            category: &["keyspace", "read", "fast"],
             handler: &move |ex, id, input| {
                 let input_validated = input.into_iter().map(|v| v.into_bulkstr()).collect::<Option<Vec<_>>>();
                 if let Some(keys) = input_validated {
@@ -209,6 +222,7 @@ thread_local! {
         map.insert("append", Command {
             arity_min: 2,
             arity_max: Some(2),
+            category: &["write", "string", "fast"],
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
                 let key = key.into_bulkstr();
@@ -223,6 +237,7 @@ thread_local! {
         map.insert("strlen", Command {
             arity_min:1,
             arity_max: Some(1),
+            category: &["read", "string", "fast"],
             handler: &move |ex, id, input| {
                 let key = get_first(input).into_bulkstr();
                 if let Some(k) = key {
@@ -235,6 +250,7 @@ thread_local! {
         map.insert("incr", Command {
             arity_min: 1,
             arity_max: Some(1),
+            category: &["write", "string", "fast"],
             handler: &move |ex, id, input| {
                 let key = get_first(input).into_bulkstr();
                 if let Some(k) = key {
@@ -247,6 +263,7 @@ thread_local! {
         map.insert("decr", Command {
             arity_min: 1,
             arity_max: Some(1),
+            category: &["write", "string", "fast"],
             handler: &move |ex, id, input| {
                 let key = get_first(input).into_bulkstr();
                 if let Some(k) = key {
@@ -259,6 +276,7 @@ thread_local! {
         map.insert("incrby", Command {
             arity_min: 2,
             arity_max: Some(2),
+            category: &["write", "string", "fast"],
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
                 let key = key.into_bulkstr();
@@ -273,6 +291,7 @@ thread_local! {
         map.insert("decrby", Command {
             arity_min: 2,
             arity_max: Some(2),
+            category: &["write", "string", "fast"],
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
                 let key = key.into_bulkstr();
@@ -287,6 +306,7 @@ thread_local! {
         map.insert("incrbyfloat", Command {
             arity_min: 2,
             arity_max: Some(2),
+            category: &["write", "string", "fast"],
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
                 let key = key.into_bulkstr();
@@ -301,6 +321,7 @@ thread_local! {
         map.insert("del", Command {
             arity_min: 1,
             arity_max: None,
+            category: &["keyspace", "write", "slow"],
             handler: &move |ex, id, input| {
                 let input_validated = input.into_iter().map(|v| v.into_bulkstr()).collect::<Option<Vec<_>>>();
                 if let Some(keys) = input_validated {

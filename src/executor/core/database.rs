@@ -13,8 +13,12 @@ impl Map {
     }
 
     pub fn set(&mut self, key: &[u8], value: Vec<u8>) -> Value {
-        self.data.insert(key.to_vec(), Value::BulkString(value));
-        Value::Ok
+        if value.len() > const { 512 * 1024 * 1024 } {
+            Value::Error(b"ERR value is too large".to_vec())
+        } else {
+            self.data.insert(key.to_vec(), Value::BulkString(value));
+            Value::Ok
+        }
     }
 
     pub fn append(&mut self, key: &[u8], value: Vec<u8>) -> Value {
@@ -29,6 +33,18 @@ impl Map {
             let len = value.len();
             self.data.insert(key.to_vec(), Value::BulkString(value));
             Value::Integer(len as i64)
+        }
+    }
+
+    pub fn strlen(&self, key: &[u8]) -> Value {
+        if let Some(v) = self.data.get(key) {
+            if let Value::BulkString(ref v) = v {
+                Value::Integer(v.len() as i64)
+            } else {
+                Value::Error(b"ERR wrong target type for 'strlen'".to_vec())
+            }
+        } else {
+            Value::Integer(0)
         }
     }
 

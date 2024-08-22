@@ -53,12 +53,12 @@ impl ExecutorImpl {
             _ => unreachable!(),
         };
 
-        println!("{:?}", items);
+        //println!("{:?}", items);
 
         let name_bs = if let Some(bs) = items[0].clone().into_bulkstr() {
             bs
         } else {
-            return b"-ERR invalid request\r\n".to_vec();
+            return Value::Error(b"ERR invalid request".to_vec()).to_bytes_vec();
         };
 
         // commands should be valid UTF-8
@@ -66,20 +66,28 @@ impl ExecutorImpl {
 
         let name = match name_res {
             Ok(name) if COMMANDS.with(|map| map.contains_key(name.as_str())) => name,
-            _ => return [b"-ERR unknown command ", name_bs.as_slice(), b"\r\n"].concat(),
+            _ => {
+                return Value::Error([b"ERR unknown command ", name_bs.as_slice()].concat())
+                    .to_bytes_vec()
+            }
         };
+
+        println!("Command: {name}");
 
         COMMANDS
             .with(|key| {
                 let command = key.get(name.as_str()).unwrap();
                 match command.execute(self, con_id, items.drain(1..).collect()) {
                     Ok(res) => res.to_bytes_vec(),
-                    Err(CommandError::ArityMismatch) => [
-                        b"ERR wrong number of arguments for command '",
-                        name.as_bytes(),
-                        b"'",
-                    ]
-                    .concat(),
+                    Err(CommandError::ArityMismatch) => Value::Error(
+                        [
+                            b"ERR wrong number of arguments for command '",
+                            name.as_bytes(),
+                            b"'",
+                        ]
+                        .concat(),
+                    )
+                    .to_bytes_vec(),
                 }
             })
             .to_vec()

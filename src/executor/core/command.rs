@@ -44,15 +44,15 @@ thread_local! {
             arity_min: 0,
             arity_max: Some(1),
             handler: &move |_, _, input| {
-                if let Some(msg) = get_first(input).into_bulkstr() {
-                    Value::BulkString(msg.to_owned())
+                if let Some(msg) = input.into_iter().next().and_then(|v| v.into_bulkstr()) {
+                    Value::BulkString(msg)
                 } else {
                     Value::SimpleString("PONG".as_bytes().to_owned())
                 }
             }
         });
         map.insert("echo", Command {
-            arity_min: 0,
+            arity_min: 1,
             arity_max: Some(1),
             handler: &move |_, _, input| {
                 if let Some(msg) = get_first(input).into_bulkstr() {
@@ -220,6 +220,18 @@ thread_local! {
                 }
             }
         });
+        map.insert("strlen", Command {
+            arity_min:1,
+            arity_max: Some(1),
+            handler: &move |ex, id, input| {
+                let key = get_first(input).into_bulkstr();
+                if let Some(k) = key {
+                    ex.get_db(id).strlen(&k)
+                } else {
+                    Value::Error(b"ERR invalid argument for 'strlen'".to_vec())
+                }
+            }
+        });
         map.insert("incr", Command {
             arity_min: 1,
             arity_max: Some(1),
@@ -245,8 +257,8 @@ thread_local! {
             }
         });
         map.insert("incrby", Command {
-            arity_min: 1,
-            arity_max: Some(1),
+            arity_min: 2,
+            arity_max: Some(2),
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
                 let key = key.into_bulkstr();
@@ -259,8 +271,8 @@ thread_local! {
             }
         });
         map.insert("decrby", Command {
-            arity_min: 1,
-            arity_max: Some(1),
+            arity_min: 2,
+            arity_max: Some(2),
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
                 let key = key.into_bulkstr();
@@ -273,8 +285,8 @@ thread_local! {
             }
         });
         map.insert("incrbyfloat", Command {
-            arity_min: 1,
-            arity_max: Some(1),
+            arity_min: 2,
+            arity_max: Some(2),
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
                 let key = key.into_bulkstr();

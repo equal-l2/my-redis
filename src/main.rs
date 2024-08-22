@@ -51,6 +51,7 @@ async fn handle_stream(mut stream: TcpStream) {
         while let Some(arr) = parser.pop() {
             let result = handle.execute(arr);
             stream.write_all(&result).await.unwrap();
+            stream.flush().await.unwrap();
         }
     }
 }

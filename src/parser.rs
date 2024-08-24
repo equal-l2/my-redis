@@ -136,8 +136,10 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> Option<Value> {
-        assert!(!self.bytes_buffer.is_empty());
         // TODO: pipeline support
+        if self.bytes_buffer.is_empty() {
+            return None;
+        }
 
         match self.bytes_buffer.front().unwrap() {
             &b'*' => {

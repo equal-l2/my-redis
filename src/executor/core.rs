@@ -8,7 +8,7 @@ mod command;
 mod connection;
 mod database;
 
-use command::COMMANDS;
+use command::{Command, CONTAINER_COMMANDS, SIMPLE_COMMANDS};
 use connection::ConnectionStore;
 use database::Database;
 
@@ -55,50 +55,45 @@ impl ExecutorImpl {
 
         //println!("{:?}", items);
 
-        let name_bs = if let Some(bs) = items[0].clone().into_bulkstr() {
-            bs
-        } else {
+        let Some(name_bs) = items[0].clone().into_bulkstr() else {
             return Value::Error(b"ERR invalid request".to_vec()).to_bytes_vec();
         };
 
         // commands should be valid UTF-8
-        let name_res = std::str::from_utf8(&name_bs).map(str::to_lowercase);
-
-        let name = match name_res {
-            Ok(name) if COMMANDS.with(|map| map.contains_key(name.as_str())) => name,
-            _ => {
-                return Value::Error([b"ERR unknown command ", name_bs.as_slice()].concat())
-                    .to_bytes_vec()
-            }
+        let Ok(name) = std::str::from_utf8(&name_bs).map(str::to_lowercase) else {
+            return Value::Error([b"ERR unknown command ", name_bs.as_slice()].concat())
+                .to_bytes_vec();
         };
 
-        println!("Command: {name}");
-
-        COMMANDS
-            .with(|key| {
-                let command = key.get(name.as_str()).unwrap();
-                match command.execute(self, con_id, items.drain(1..).collect()) {
-                    Some(res) => res.to_bytes_vec(),
-                    _ => Value::Error(
-                        [
-                            b"ERR wrong number of arguments for command '",
-                            name.as_bytes(),
-                            b"'",
-                        ]
-                        .concat(),
-                    )
-                    .to_bytes_vec(),
-                }
+        if let Some(v) = SIMPLE_COMMANDS.with(|key| {
+            key.get(name.as_str()).map(|command| {
+                command
+                    .execute(name.as_str(), self, &con_id, items.drain(1..).collect())
+                    .to_bytes_vec()
             })
-            .to_vec()
+        }) {
+            return v;
+        }
+
+        if let Some(v) = CONTAINER_COMMANDS.with(|key| {
+            key.get(name.as_str()).map(|command| {
+                command
+                    .execute(name.as_str(), self, &con_id, items.drain(1..).collect())
+                    .to_bytes_vec()
+            })
+        }) {
+            return v;
+        }
+
+        Value::Error([b"ERR unknown command ", name_bs.as_slice()].concat()).to_bytes_vec()
     }
 
-    pub fn get_db(&mut self, id: ConnectionId) -> &mut Map {
-        let state = self.cons.state(&id);
+    pub fn get_db(&mut self, id: &ConnectionId) -> &mut Map {
+        let state = self.cons.state(id);
         self.db.get(state.db)
     }
 
-    pub fn select(&mut self, id: ConnectionId, arg: usize) -> Value {
+    pub fn select(&mut self, id: &ConnectionId, arg: usize) -> Value {
         match self.validate_db_index_value(arg) {
             Some(db_index) => {
                 self.cons.set_db(id, db_index);

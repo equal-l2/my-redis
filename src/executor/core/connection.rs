@@ -50,8 +50,8 @@ impl ConnectionStore {
         self.data.contains_key(id)
     }
 
-    pub fn set_db(&mut self, id: ConnectionId, db_index: usize) {
-        self.state_mut(&id).db = db_index;
+    pub fn set_db(&mut self, id: &ConnectionId, db_index: usize) {
+        self.state_mut(id).db = db_index;
     }
     pub fn list(&self) -> Value {
         Value::BulkString(

@@ -38,3 +38,22 @@ impl AclCategory {
         )
     }
 }
+
+impl std::str::FromStr for AclCategory {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "admin" => Ok(AclCategory::Admin),
+            "connection" => Ok(AclCategory::Connection),
+            "dangerous" => Ok(AclCategory::Dangerous),
+            "fast" => Ok(AclCategory::Fast),
+            "keyspace" => Ok(AclCategory::Keyspace),
+            "read" => Ok(AclCategory::Read),
+            "slow" => Ok(AclCategory::Slow),
+            "string" => Ok(AclCategory::String),
+            "write" => Ok(AclCategory::Write),
+            _ => Err(()),
+        }
+    }
+}

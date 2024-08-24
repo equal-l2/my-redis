@@ -39,6 +39,28 @@ impl Command {
 
 thread_local! {
     pub static COMMANDS: LazyCell<HashMap<&'static str, Command>> = LazyCell::new(initialize_commands);
+
+    static COMMANDS_BY_ACL_CATEGORY: LazyCell<HashMap<AclCategory, Value>> = LazyCell::new(|| {
+        let mut map: HashMap<AclCategory, Vec<Vec<u8>>> = HashMap::new();
+        COMMANDS.with(|commands| {
+            for (name, Command {category, subcommands, .. }) in commands.iter() {
+                for cat in category.iter() {
+                    map.entry(*cat).or_default().push(name.bytes().collect());
+                }
+                if let Some(subs) = subcommands {
+                    for (sub_name, Command { category, ..}) in subs.iter() {
+                        for cat in category.iter() {
+                            map.entry(*cat).or_default().push(format!("{}|{}", name, sub_name).into_bytes());
+                        }
+                    }
+                }
+            }
+        });
+        map.into_iter().map(|(k, mut v)| {
+            v.sort_unstable();
+            (k, Value::Array(v.into_iter().map(Value::BulkString).collect()))
+        }).collect()
+    });
 }
 
 fn get_first(args: Vec<Value>) -> Value {
@@ -55,6 +77,71 @@ fn get_first_two(args: Vec<Value>) -> (Value, Value) {
 
 fn initialize_commands() -> HashMap<&'static str, Command> {
     let mut map = HashMap::<&'static str, Command>::new();
+    map.insert(
+        "acl",
+        Command {
+            arity_min: 1,
+            arity_max: None,
+            category: &[AclCategory::Slow],
+            handler: &move |this, ex, id, mut input| match input.len() {
+                0 => unreachable!(),
+                _ => {
+                    let rest = input.drain(1..).collect::<Vec<_>>();
+                    let Some(sub) = get_first(input).into_string() else {
+                        return Value::Error(b"ERR invalid arguments for 'acl'".to_vec());
+                    };
+
+                    let Some(cmd) = this.subcommands.as_ref().unwrap().get(sub.as_str()) else {
+                        return Value::Error(b"ERR unknown subcommand for 'acl'".to_vec());
+                    };
+
+                    if let Some(v) = cmd.execute(ex, id, rest) {
+                        v
+                    } else {
+                        Value::Error(
+                            [
+                                b"ERR wrong number of arguments for command 'acl ".as_slice(),
+                                sub.as_bytes(),
+                                b"'",
+                            ]
+                            .concat(),
+                        )
+                    }
+                }
+            },
+            subcommands: Some({
+                let mut map = HashMap::new();
+                map.insert(
+                    "cat",
+                    Command {
+                        arity_min: 0,
+                        arity_max: Some(1),
+                        category: &[AclCategory::Slow],
+                        handler: &move |_, _, _, input| {
+                            input
+                                .into_iter()
+                                .next()
+                                .map(|s| {
+                                    let Some(category) =
+                                        s.into_string().and_then(|s| s.parse().ok())
+                                    else {
+                                        return Value::Error(
+                                            b"ERR unknown category for 'acl cat'".to_vec(),
+                                        );
+                                    };
+
+                                    COMMANDS_BY_ACL_CATEGORY
+                                        .with(|map| map.get(&category).unwrap().clone())
+                                })
+                                .unwrap_or_else(AclCategory::array)
+                        },
+                        subcommands: None,
+                    },
+                );
+                map
+            }),
+        },
+    );
     map.insert(
         "ping",
         Command {

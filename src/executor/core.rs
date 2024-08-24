@@ -1,13 +1,16 @@
+use std::cell::LazyCell;
+use std::collections::HashMap;
+
 use database::Map;
 use smol::net::SocketAddr;
 
 use crate::value::Value;
 
+mod acl;
 mod command;
 mod connection;
 mod database;
 
-use command::CommandError;
 use command::COMMANDS;
 use connection::ConnectionStore;
 use database::Database;
@@ -18,6 +21,23 @@ pub use connection::ConnectionId;
 pub struct ExecutorImpl {
     db: Database,
     cons: ConnectionStore,
+}
+
+thread_local! {
+    static COMMANDS_BY_ACL_CATEGORY: LazyCell<HashMap<acl::AclCategory, Value>> = LazyCell::new(|| {
+        let mut map = HashMap::new();
+        COMMANDS.with(|commands| {
+            for (name, command) in commands.iter() {
+                for cat in command.category {
+                    map.entry(*cat).or_insert_with(Vec::new).push(*name);
+                }
+            }
+        });
+        map.into_iter().map(|(k, mut v)| {
+            v.sort_unstable();
+            (k, Value::Array(v.into_iter().map(|s| Value::BulkString(s.as_bytes().to_owned())).collect()))
+        }).collect()
+    });
 }
 
 impl ExecutorImpl {
@@ -78,8 +98,8 @@ impl ExecutorImpl {
             .with(|key| {
                 let command = key.get(name.as_str()).unwrap();
                 match command.execute(self, con_id, items.drain(1..).collect()) {
-                    Ok(res) => res.to_bytes_vec(),
-                    Err(CommandError::ArityMismatch) => Value::Error(
+                    Some(res) => res.to_bytes_vec(),
+                    _ => Value::Error(
                         [
                             b"ERR wrong number of arguments for command '",
                             name.as_bytes(),

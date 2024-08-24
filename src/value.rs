@@ -77,4 +77,13 @@ impl Value {
             _ => None,
         }
     }
+
+    pub fn into_string(self) -> Option<String> {
+        match self {
+            Value::SimpleString(v) | Value::BulkString(v) => {
+                Some(std::str::from_utf8(&v).ok()?.to_string())
+            }
+            _ => None,
+        }
+    }
 }

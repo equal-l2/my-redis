@@ -7,6 +7,7 @@ mod acl;
 mod command;
 mod connection;
 mod database;
+mod glob;
 
 use command::{Command, CONTAINER_COMMANDS, SIMPLE_COMMANDS};
 use connection::ConnectionStore;
@@ -45,8 +46,8 @@ impl ExecutorImpl {
     }
 
     pub fn execute(&mut self, arr: Value, con_id: ConnectionId) -> Vec<u8> {
-        assert!(matches!(arr, Value::Array(_)));
-        assert!(self.cons.has(&con_id));
+        debug_assert!(matches!(arr, Value::Array(_)));
+        debug_assert!(self.cons.has(&con_id));
 
         let mut items = match arr {
             Value::Array(items) => items,
@@ -55,13 +56,13 @@ impl ExecutorImpl {
 
         //println!("{:?}", items);
 
-        let Some(name_bs) = items[0].clone().into_bulkstr() else {
+        let Some(name_bs) = items[0].clone().unwrap_bulkstr() else {
             return Value::Error(b"ERR invalid request".to_vec()).to_bytes_vec();
         };
 
         // commands should be valid UTF-8
-        let Ok(name) = std::str::from_utf8(&name_bs).map(str::to_lowercase) else {
-            return Value::Error([b"ERR unknown command ", name_bs.as_slice()].concat())
+        let Ok(name) = std::str::from_utf8(&name_bs).map(str::to_ascii_lowercase) else {
+            return Value::Error([b"ERR unknown command '", name_bs.as_slice(), b"'"].concat())
                 .to_bytes_vec();
         };
 
@@ -85,7 +86,8 @@ impl ExecutorImpl {
             return v;
         }
 
-        Value::Error([b"ERR unknown command ", name_bs.as_slice()].concat()).to_bytes_vec()
+        return Value::Error([b"ERR unknown command '", name_bs.as_slice(), b"'"].concat())
+            .to_bytes_vec();
     }
 
     pub fn get_db(&mut self, id: &ConnectionId) -> &mut Map {

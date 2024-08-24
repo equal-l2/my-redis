@@ -155,6 +155,18 @@ impl Map {
                 .count() as i64,
         )
     }
+
+    pub fn keys(&self, pattern: &[u8]) -> Value {
+        let finder = super::glob::Finder::new(pattern);
+        Value::Array(
+            self.data
+                .keys()
+                .filter(|k| finder.do_match(k))
+                .cloned()
+                .map(Value::BulkString)
+                .collect(),
+        )
+    }
 }
 
 #[derive(Debug)]

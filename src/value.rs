@@ -40,7 +40,7 @@ impl Value {
         }
     }
 
-    pub fn into_bulkstr(self) -> Option<Vec<u8>> {
+    pub fn unwrap_bulkstr(self) -> Option<Vec<u8>> {
         match self {
             Value::BulkString(v) => Some(v),
             _ => None,
@@ -82,6 +82,15 @@ impl Value {
         match self {
             Value::SimpleString(v) | Value::BulkString(v) => {
                 Some(std::str::from_utf8(&v).ok()?.to_string())
+            }
+            _ => None,
+        }
+    }
+
+    pub fn into_lower_string(self) -> Option<String> {
+        match self {
+            Value::SimpleString(v) | Value::BulkString(v) => {
+                Some(std::str::from_utf8(&v).ok()?.to_ascii_lowercase())
             }
             _ => None,
         }

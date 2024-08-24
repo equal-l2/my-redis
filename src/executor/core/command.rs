@@ -115,7 +115,7 @@ fn populate_category_map() -> HashMap<AclCategory, Value> {
     SIMPLE_COMMANDS.with(|commands| {
         for (name, SimpleCommand { category, .. }) in commands.iter() {
             for cat in category.iter() {
-                map.entry(*cat).or_default().push(name.bytes().collect());
+                map.entry(*cat).or_default().push(name.as_bytes().to_vec());
             }
         }
     });
@@ -133,7 +133,7 @@ fn populate_category_map() -> HashMap<AclCategory, Value> {
         {
             if handler.is_some() {
                 for cat in category.iter() {
-                    map.entry(*cat).or_default().push(name.bytes().collect());
+                    map.entry(*cat).or_default().push(name.as_bytes().to_vec());
                 }
             }
             for (sub_name, SimpleCommand { category, .. }) in subcommands.iter() {
@@ -164,9 +164,16 @@ fn get_first(args: Vec<Value>) -> Value {
 
 fn get_first_two(args: Vec<Value>) -> (Value, Value) {
     let mut args = args.into_iter();
-    let first = args.next().unwrap();
-    let second = args.next().unwrap();
-    (first, second)
+    (args.next().unwrap(), args.next().unwrap())
+}
+
+fn get_first_three(args: Vec<Value>) -> (Value, Value, Value) {
+    let mut args = args.into_iter();
+    (
+        args.next().unwrap(),
+        args.next().unwrap(),
+        args.next().unwrap(),
+    )
 }
 
 fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
@@ -181,7 +188,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
                 input
                     .into_iter()
                     .next()
-                    .and_then(|v| v.into_bulkstr())
+                    .and_then(|v| v.unwrap_bulkstr())
                     .map(Value::BulkString)
                     .unwrap_or_else(|| Value::SimpleString(b"PONG".as_ref().to_vec()))
             },
@@ -195,7 +202,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             category: &[AclCategory::Fast, AclCategory::Connection],
             handler: &move |_, _, input| {
                 get_first(input)
-                    .into_bulkstr()
+                    .unwrap_bulkstr()
                     .map(|msg| Value::BulkString(msg.to_owned()))
                     .unwrap_or_else(|| Value::Error(b"ERR invalid argument for 'echo'".to_vec()))
             },
@@ -209,7 +216,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             category: &[AclCategory::Read, AclCategory::String, AclCategory::Fast],
             handler: &move |ex, id, input| {
                 get_first(input)
-                    .into_bulkstr()
+                    .unwrap_bulkstr()
                     .map(|k| ex.get_db(id).get(&k))
                     .unwrap_or_else(|| Value::Error(b"ERR invalid argument for 'get'".to_vec()))
             },
@@ -224,10 +231,10 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             // TODO: support options
             handler: &move |ex, id, input| {
                 let mut args = input.into_iter();
-                let Some(key) = args.next().unwrap().into_bulkstr() else {
+                let Some(key) = args.next().unwrap().unwrap_bulkstr() else {
                     return Value::Error(b"ERR wrong key type for 'set'".to_vec());
                 };
-                let Some(value) = args.next().unwrap().into_bulkstr() else {
+                let Some(value) = args.next().unwrap().unwrap_bulkstr() else {
                     return Value::Error(b"ERR wrong value type for 'set'".to_vec());
                 };
                 ex.get_db(id).set(&key, value)
@@ -325,7 +332,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             handler: &move |ex, id, input| {
                 input
                     .into_iter()
-                    .map(|v| v.into_bulkstr())
+                    .map(|v| v.unwrap_bulkstr())
                     .collect::<Option<Vec<_>>>()
                     .map(|keys| ex.get_db(id).exists(keys))
                     .unwrap_or_else(|| {
@@ -342,10 +349,10 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             category: &[AclCategory::Write, AclCategory::String, AclCategory::Fast],
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
-                let Some(key) = key.into_bulkstr() else {
+                let Some(key) = key.unwrap_bulkstr() else {
                     return Value::Error(b"ERR invalid key type for 'append'".to_vec());
                 };
-                let Some(value) = value.into_bulkstr() else {
+                let Some(value) = value.unwrap_bulkstr() else {
                     return Value::Error(b"ERR invalid value type for 'append'".to_vec());
                 };
                 ex.get_db(id).append(&key, value)
@@ -360,7 +367,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             category: &[AclCategory::Read, AclCategory::String, AclCategory::Fast],
             handler: &move |ex, id, input| {
                 get_first(input)
-                    .into_bulkstr()
+                    .unwrap_bulkstr()
                     .map(|key| ex.get_db(id).strlen(&key))
                     .unwrap_or_else(|| Value::Error(b"ERR invalid argument for 'strlen'".to_vec()))
             },
@@ -374,7 +381,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             category: &[AclCategory::Write, AclCategory::String, AclCategory::Fast],
             handler: &move |ex, id, input| {
                 get_first(input)
-                    .into_bulkstr()
+                    .unwrap_bulkstr()
                     .map(|key| ex.get_db(id).incr_by(&key, 1))
                     .unwrap_or_else(|| Value::Error(b"ERR invalid argument for 'incr'".to_vec()))
             },
@@ -388,7 +395,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             category: &[AclCategory::Write, AclCategory::String, AclCategory::Fast],
             handler: &move |ex, id, input| {
                 get_first(input)
-                    .into_bulkstr()
+                    .unwrap_bulkstr()
                     .map(|key| ex.get_db(id).decr_by(&key, 1))
                     .unwrap_or_else(|| Value::Error(b"ERR invalid argument for 'decr'".to_vec()))
             },
@@ -402,7 +409,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             category: &[AclCategory::Write, AclCategory::String, AclCategory::Fast],
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
-                let Some(key) = key.into_bulkstr() else {
+                let Some(key) = key.unwrap_bulkstr() else {
                     return Value::Error(b"ERR invalid key type for 'incrby'".to_vec());
                 };
                 let Some(value) = value.to_i64() else {
@@ -420,7 +427,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             category: &[AclCategory::Write, AclCategory::String, AclCategory::Fast],
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
-                let Some(key) = key.into_bulkstr() else {
+                let Some(key) = key.unwrap_bulkstr() else {
                     return Value::Error(b"ERR invalid key type for 'decrby'".to_vec());
                 };
                 let Some(value) = value.to_i64() else {
@@ -438,7 +445,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             category: &[AclCategory::Write, AclCategory::String, AclCategory::Fast],
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
-                let Some(key) = key.into_bulkstr() else {
+                let Some(key) = key.unwrap_bulkstr() else {
                     return Value::Error(b"ERR invalid key type for 'incrbyfloat'".to_vec());
                 };
                 let Some(value) = value.to_floating() else {
@@ -457,10 +464,29 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             handler: &move |ex, id, input| {
                 input
                     .into_iter()
-                    .map(|v| v.into_bulkstr())
+                    .map(|v| v.unwrap_bulkstr())
                     .collect::<Option<Vec<_>>>()
                     .map(|keys| ex.get_db(id).del(keys))
                     .unwrap_or_else(|| Value::Error(b"ERR wrong argument type for 'del'".to_vec()))
+            },
+        },
+    );
+    map.insert(
+        "keys",
+        SimpleCommand {
+            arity_min: 1,
+            arity_max: Some(1),
+            category: &[
+                AclCategory::Keyspace,
+                AclCategory::Read,
+                AclCategory::Slow,
+                AclCategory::Dangerous,
+            ],
+            handler: &move |ex, id, input| {
+                let Some(pattern) = get_first(input).unwrap_bulkstr() else {
+                    return Value::Error(b"ERR invalid argument for 'keys'".to_vec());
+                };
+                ex.get_db(id).keys(&pattern)
             },
         },
     );
@@ -491,7 +517,7 @@ fn initialise_container_commands() -> HashMap<&'static str, ContainerCommand> {
                                         s.into_string().and_then(|s| s.parse().ok())
                                     else {
                                         return Value::Error(
-                                            b"ERR unknown category for 'acl cat'".to_vec(),
+                                            b"ERR unknown ACL category for 'acl cat'".to_vec(),
                                         );
                                     };
 
@@ -567,7 +593,157 @@ fn initialise_container_commands() -> HashMap<&'static str, ContainerCommand> {
                         },
                     },
                 );
+                map.insert(
+                    "list",
+                    SimpleCommand {
+                        arity_min: 0,
+                        arity_max: Some(3),
+                        category: &[AclCategory::Slow, AclCategory::Connection],
+                        handler: &move |_, _, input| match input.len() {
+                            0 => {
+                                let mut names: Vec<_> = SIMPLE_COMMANDS.with(|sc| {
+                                    CONTAINER_COMMANDS
+                                        .with(|cc| sc.keys().chain(cc.keys()).cloned().collect())
+                                });
+                                names.sort_unstable();
+                                Value::Array(
+                                    names
+                                        .into_iter()
+                                        .map(|s| Value::BulkString(s.as_bytes().to_vec()))
+                                        .collect(),
+                                )
+                            }
+                            3 => {
+                                let (filterby, filter_category, filter_pattern) =
+                                    get_first_three(input);
+                                if let Some("filterby") = filterby.into_lower_string().as_deref() {
+                                    // OK
+                                } else {
+                                    return Value::Error(
+                                        b"ERR invalid argument for 'command list'".to_vec(),
+                                    );
+                                }
+
+                                let Some(filter_category) = filter_category.into_lower_string()
+                                else {
+                                    return Value::Error(
+                                        b"ERR invalid argument for 'command list'".to_vec(),
+                                    );
+                                };
+
+                                match filter_category.as_str() {
+                                    "module" => Value::Error(
+                                        b"ERR filterby module is not implemented yet".to_vec(),
+                                    ),
+                                    "aclcat" => {
+                                        let Some(category) = filter_pattern
+                                            .into_lower_string()
+                                            .and_then(|s| s.parse().ok())
+                                        else {
+                                            return Value::Error(
+                                                b"ERR unknown ACL category for 'command list'"
+                                                    .to_vec(),
+                                            );
+                                        };
+                                        COMMANDS_BY_ACL_CATEGORY
+                                            .with(move |map| map.get(&category).cloned())
+                                            .unwrap_or_else(|| {
+                                                Value::Error(
+                                                    b"ERR unknown ACL category for 'command list'"
+                                                        .to_vec(),
+                                                )
+                                            })
+                                    }
+                                    "pattern" => {
+                                        let Some(pattern) = filter_pattern.unwrap_bulkstr() else {
+                                            return Value::Error(
+                                                b"ERR invalid argument for 'command list'".to_vec(),
+                                            );
+                                        };
+                                        let finder = super::glob::Finder::new(&pattern);
+                                        let mut names: Vec<_> = SIMPLE_COMMANDS.with(|sc| {
+                                            CONTAINER_COMMANDS.with(|cc| {
+                                                sc.keys()
+                                                    .chain(cc.keys())
+                                                    .filter(|s| finder.do_match(s.as_bytes()))
+                                                    .cloned()
+                                                    .collect()
+                                            })
+                                        });
+                                        names.sort_unstable();
+                                        Value::Array(
+                                            names
+                                                .into_iter()
+                                                .map(|s| Value::BulkString(s.as_bytes().to_vec()))
+                                                .collect(),
+                                        )
+                                    }
+                                    _ => Value::Error(
+                                        b"ERR unknown filter for 'command list'".to_vec(),
+                                    ),
+                                }
+                            }
+                            _ => Value::Error(
+                                b"ERR wrong number of arguments for 'command list'".to_vec(),
+                            ),
+                        },
+                    },
+                );
                 // TODO: other subcommands for "command"
+                map
+            },
+        },
+    );
+    map.insert(
+        "function",
+        ContainerCommand {
+            category: &[AclCategory::Slow],
+            handler: None,
+            subcommands: {
+                let mut map = HashMap::new();
+                map.insert(
+                    "flush",
+                    SimpleCommand {
+                        arity_min: 0,
+                        arity_max: Some(1),
+                        category: &[
+                            AclCategory::Write,
+                            AclCategory::Slow,
+                            AclCategory::Scripting,
+                        ],
+                        handler: &move |_, _, _| {
+                            // TODO: just for test
+                            Value::Ok
+                        },
+                    },
+                );
+                map
+            },
+        },
+    );
+    map.insert(
+        "config",
+        ContainerCommand {
+            category: &[AclCategory::Slow],
+            handler: None,
+            subcommands: {
+                let mut map = HashMap::new();
+                map.insert(
+                    "get",
+                    SimpleCommand {
+                        arity_min: 1,
+                        arity_max: None,
+                        category: &[
+                            AclCategory::Admin,
+                            AclCategory::Slow,
+                            AclCategory::Dangerous,
+                        ],
+                        handler: &move |_, _, _| {
+                            // TODO: just for test
+                            Value::NullArray
+                        },
+                    },
+                );
                 map
             },
         },

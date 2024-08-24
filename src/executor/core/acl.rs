@@ -13,6 +13,7 @@ pub enum AclCategory {
     Slow,
     String,
     Write,
+    Scripting,
 }
 
 impl AclCategory {
@@ -27,13 +28,18 @@ impl AclCategory {
             AclCategory::Slow => b"slow".as_slice(),
             AclCategory::String => b"string".as_slice(),
             AclCategory::Write => b"write".as_slice(),
+            AclCategory::Scripting => b"scripting".as_slice(),
         }
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.as_bytes().to_vec()
     }
 
     pub fn array() -> Value {
         Value::Array(
             AclCategory::iter()
-                .map(|c| Value::BulkString(c.as_bytes().to_vec()))
+                .map(|c| Value::BulkString(c.into_bytes()))
                 .collect(),
         )
     }
@@ -53,6 +59,7 @@ impl std::str::FromStr for AclCategory {
             "slow" => Ok(AclCategory::Slow),
             "string" => Ok(AclCategory::String),
             "write" => Ok(AclCategory::Write),
+            "scripting" => Ok(AclCategory::Scripting),
             _ => Err(()),
         }
     }

@@ -1,7 +1,7 @@
 use database::Map;
 use smol::net::SocketAddr;
 
-use crate::value::Value;
+use crate::{bstr::BStr, output_value::OutputValue};
 
 mod acl;
 mod command;
@@ -14,6 +14,8 @@ use connection::ConnectionStore;
 use database::Database;
 
 pub use connection::ConnectionId;
+
+use super::InputValue;
 
 #[derive(Debug)]
 pub struct ExecutorImpl {
@@ -45,31 +47,22 @@ impl ExecutorImpl {
         }
     }
 
-    pub fn execute(&mut self, arr: Value, con_id: ConnectionId) -> Vec<u8> {
-        debug_assert!(matches!(arr, Value::Array(_)));
+    pub fn execute(&mut self, mut input: Vec<InputValue>, con_id: ConnectionId) -> Vec<u8> {
         debug_assert!(self.cons.has(&con_id));
 
-        let mut items = match arr {
-            Value::Array(items) => items,
-            _ => unreachable!(),
-        };
-
-        //println!("{:?}", items);
-
-        let Some(name_bs) = items[0].clone().unwrap_bulkstr() else {
-            return Value::Error(b"ERR invalid request".to_vec()).to_bytes_vec();
-        };
+        let name_bs = input[0].clone();
 
         // commands should be valid UTF-8
         let Ok(name) = std::str::from_utf8(&name_bs).map(str::to_ascii_lowercase) else {
-            return Value::Error([b"ERR unknown command '", name_bs.as_slice(), b"'"].concat())
-                .to_bytes_vec();
+            return [b"ERR unknown command '", name_bs.as_slice(), b"'"]
+                .concat()
+                .to_redis_error();
         };
 
         if let Some(v) = SIMPLE_COMMANDS.with(|key| {
             key.get(name.as_str()).map(|command| {
                 command
-                    .execute(name.as_str(), self, &con_id, items.drain(1..).collect())
+                    .execute(name.as_str(), self, &con_id, input.drain(1..).collect())
                     .to_bytes_vec()
             })
         }) {
@@ -79,15 +72,16 @@ impl ExecutorImpl {
         if let Some(v) = CONTAINER_COMMANDS.with(|key| {
             key.get(name.as_str()).map(|command| {
                 command
-                    .execute(name.as_str(), self, &con_id, items.drain(1..).collect())
+                    .execute(name.as_str(), self, &con_id, input.drain(1..).collect())
                     .to_bytes_vec()
             })
         }) {
             return v;
         }
 
-        return Value::Error([b"ERR unknown command '", name_bs.as_slice(), b"'"].concat())
-            .to_bytes_vec();
+        return [b"ERR unknown command '", name_bs.as_slice(), b"'"]
+            .concat()
+            .to_redis_error();
     }
 
     pub fn get_db(&mut self, id: &ConnectionId) -> &mut Map {
@@ -95,37 +89,37 @@ impl ExecutorImpl {
         self.db.get(state.db)
     }
 
-    pub fn select(&mut self, id: &ConnectionId, arg: usize) -> Value {
+    pub fn select(&mut self, id: &ConnectionId, arg: usize) -> OutputValue {
         match self.validate_db_index_value(arg) {
             Some(db_index) => {
                 self.cons.set_db(id, db_index);
-                Value::Ok
+                OutputValue::Ok
             }
-            None => Value::Error(b"ERR DB index is out of range".to_vec()),
+            None => OutputValue::Error(b"ERR DB index is out of range".to_vec()),
         }
     }
 
-    pub fn swap_db(&mut self, db1: usize, db2: usize) -> Value {
+    pub fn swap_db(&mut self, db1: usize, db2: usize) -> OutputValue {
         let db_index_opt1 = self.validate_db_index_value(db1);
         let db_index_opt2 = self.validate_db_index_value(db2);
         match (db_index_opt1, db_index_opt2) {
             (Some(db_index1), Some(db_index2)) => {
                 self.db.swap(db_index1, db_index2);
-                Value::Ok
+                OutputValue::Ok
             }
-            (None, _) => Value::Error(b"ERR first DB index is out of range".to_vec()),
-            (_, None) => Value::Error(b"ERR second DB index is out of range".to_vec()),
+            (None, _) => OutputValue::Error(b"ERR first DB index is out of range".to_vec()),
+            (_, None) => OutputValue::Error(b"ERR second DB index is out of range".to_vec()),
         }
     }
 
-    pub fn flushall(&mut self) -> Value {
+    pub fn flushall(&mut self) -> OutputValue {
         for db in self.db.iter_mut() {
             db.flushdb();
         }
-        Value::Ok
+        OutputValue::Ok
     }
 
-    pub fn client_list(&self) -> Value {
+    pub fn client_list(&self) -> OutputValue {
         self.cons.list()
     }
 }

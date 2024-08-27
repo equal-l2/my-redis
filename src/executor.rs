@@ -1,9 +1,10 @@
-use crate::value::Value;
 use smol::net::SocketAddr;
 
 mod core;
 
 use core::{ConnectionId, ExecutorImpl};
+
+pub type InputValue = Vec<u8>;
 
 #[derive(Debug)]
 pub struct Executor {
@@ -22,7 +23,7 @@ impl Executor {
         }
     }
 
-    fn execute(&mut self, arr: Value, con: ConnectionId) -> Vec<u8> {
+    fn execute(&mut self, arr: Vec<InputValue>, con: ConnectionId) -> Vec<u8> {
         self.ex.borrow_mut().execute(arr, con)
     }
 
@@ -47,8 +48,8 @@ impl Clone for Executor {
 }
 
 impl Handle {
-    pub fn execute(&mut self, arr: Value) -> Vec<u8> {
-        self.ex.execute(arr, self.con_id.clone())
+    pub fn execute(&mut self, input: Vec<InputValue>) -> Vec<u8> {
+        self.ex.execute(input, self.con_id.clone())
     }
 }
 

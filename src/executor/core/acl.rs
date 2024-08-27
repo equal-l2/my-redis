@@ -1,6 +1,6 @@
 use strum::IntoEnumIterator;
 
-use crate::value::Value;
+use crate::output_value::OutputValue;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, strum::EnumIter)]
 pub enum AclCategory {
@@ -36,10 +36,10 @@ impl AclCategory {
         self.as_bytes().to_vec()
     }
 
-    pub fn array() -> Value {
-        Value::Array(
+    pub fn array() -> OutputValue {
+        OutputValue::Array(
             AclCategory::iter()
-                .map(|c| Value::BulkString(c.into_bytes()))
+                .map(|c| OutputValue::BulkString(c.into_bytes()))
                 .collect(),
         )
     }

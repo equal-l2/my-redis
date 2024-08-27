@@ -1,16 +1,36 @@
+use executor::InputValue;
+use parser::ParsedValue;
 use smol::net::TcpListener;
 use smol::net::TcpStream;
 use smol::prelude::*;
 
+mod bstr;
 mod executor;
+mod output_value;
 mod parser;
-mod value;
 
+use bstr::BStr;
 use executor::Executor;
 use parser::Parser;
 
 thread_local! {
     static INSTANCE: std::cell::OnceCell<Executor> = const { std::cell::OnceCell::new() };
+}
+
+fn remove_non_command_values(value: ParsedValue) -> Result<Vec<InputValue>, &'static [u8]> {
+    match value {
+        ParsedValue::BulkString(_) => Err(b"ERR Unexpected bare bulk string"),
+        ParsedValue::Array(v) => {
+            let mut res = Vec::new();
+            for item in v {
+                match item {
+                    ParsedValue::Array(_) => return Err(b"ERR nested arrays are not supported"),
+                    ParsedValue::BulkString(s) => res.push(s),
+                }
+            }
+            Ok(res)
+        }
+    }
 }
 
 async fn handle_stream(mut stream: TcpStream) {
@@ -45,12 +65,30 @@ async fn handle_stream(mut stream: TcpStream) {
         }
 
         // parse
-        parser.parse();
+        let mut values = Vec::new();
+        let mut error = Vec::new();
+        loop {
+            match parser.parse() {
+                Some(Ok(v)) => match remove_non_command_values(v) {
+                    Ok(v) => values.push(v),
+                    Err(e) => error.push(e.to_redis_error()),
+                },
+                Some(Err(e)) => {
+                    error.push(e.to_redis_error());
+                    break;
+                }
+                None => break,
+            }
+        }
 
-        // execute
-        while let Some(arr) = parser.pop() {
-            let result = handle.execute(arr);
-            stream.write_all(&result).await.unwrap();
+        let results: Vec<_> = values
+            .into_iter()
+            .map(|v| handle.execute(v))
+            .chain(error)
+            .collect();
+
+        for v in results.into_iter() {
+            stream.write_all(&v).await.unwrap();
             stream.flush().await.unwrap();
         }
     }

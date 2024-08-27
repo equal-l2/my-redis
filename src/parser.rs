@@ -1,6 +1,10 @@
-use crate::value::Value;
 use std::collections::VecDeque;
 use std::iter::Extend;
+
+pub enum ParsedValue {
+    BulkString(Vec<u8>),
+    Array(Vec<ParsedValue>),
+}
 
 enum DataType {
     BulkString,
@@ -8,7 +12,6 @@ enum DataType {
 }
 
 pub struct Parser {
-    value_buffer: Vec<Value>,
     bytes_buffer: VecDeque<u8>,
 }
 
@@ -28,7 +31,7 @@ impl<'a, 'b, I: ExactSizeIterator<Item = &'b u8>> RespItemParser<'a, 'b, I> {
         }
     }
 
-    fn parse(&mut self) -> Option<Result<Value, Value>> {
+    fn parse(&mut self) -> Option<Result<ParsedValue, &'static [u8]>> {
         let data_type = match self.cursor.next()? {
             // without len
             b'+' => todo!("simple string"),
@@ -38,7 +41,7 @@ impl<'a, 'b, I: ExactSizeIterator<Item = &'b u8>> RespItemParser<'a, 'b, I> {
             b'$' => DataType::BulkString,
             b'*' => DataType::Array,
             // unsupported
-            _ => return Some(Err(Value::Error(b"ERR invalid data type".to_vec()))),
+            _ => return Some(Err(b"ERR invalid data type")),
         };
 
         // TODO: handle types without len?
@@ -52,19 +55,11 @@ impl<'a, 'b, I: ExactSizeIterator<Item = &'b u8>> RespItemParser<'a, 'b, I> {
                         b'\n' => {
                             break;
                         }
-                        _ => {
-                            return Some(Err(Value::Error(
-                                b"ERR invalid character in length".to_vec(),
-                            )))
-                        }
+                        _ => return Some(Err(b"ERR invalid character in length")),
                     }
                 }
                 ch @ b'0'..=b'9' | ch @ b'-' => len_buffer.push(*ch),
-                _ => {
-                    return Some(Err(Value::Error(
-                        b"ERR invalid character in length".to_vec(),
-                    )))
-                }
+                _ => return Some(Err(b"ERR invalid character in length")),
             }
         }
         let len_str =
@@ -72,20 +67,18 @@ impl<'a, 'b, I: ExactSizeIterator<Item = &'b u8>> RespItemParser<'a, 'b, I> {
         let len = match len_str.parse::<i64>() {
             Ok(len) => {
                 if len < -1 {
-                    return Some(Err(Value::Error(
-                        b"ERR negative length is not supported".to_vec(),
-                    )));
+                    return Some(Err(b"ERR negative length is not supported"));
                 } else {
                     len
                 }
             }
-            _ => return Some(Err(Value::Error(b"ERR invalid length".to_vec()))),
+            _ => return Some(Err(b"ERR invalid length")),
         };
 
         match data_type {
             DataType::Array => {
                 if len == -1 {
-                    return Some(Ok(Value::NullArray));
+                    return Some(Err(b"ERR unexpected null array"));
                 }
 
                 let mut item_buffer = Vec::with_capacity(len as usize);
@@ -97,11 +90,11 @@ impl<'a, 'b, I: ExactSizeIterator<Item = &'b u8>> RespItemParser<'a, 'b, I> {
                     }
                 }
 
-                Some(Ok(Value::Array(item_buffer)))
+                Some(Ok(ParsedValue::Array(item_buffer)))
             }
             DataType::BulkString => {
                 if len == -1 {
-                    return Some(Ok(Value::NullBulkString));
+                    return Some(Err(b"ERR unexpected null bulkstring"));
                 }
 
                 if self.cursor.len() < (len + 2) as usize {
@@ -115,13 +108,13 @@ impl<'a, 'b, I: ExactSizeIterator<Item = &'b u8>> RespItemParser<'a, 'b, I> {
                 }
 
                 if self.cursor.next()? != &b'\r' {
-                    return Some(Err(Value::Error(b"ERR expected '\\r'".to_vec())));
+                    return Some(Err(b"ERR expected '\\r'"));
                 };
                 if self.cursor.next()? != &b'\n' {
-                    return Some(Err(Value::Error(b"ERR expected '\\n'".to_vec())));
+                    return Some(Err(b"ERR expected '\\n'"));
                 };
 
-                Some(Ok(Value::BulkString(bs_buffer)))
+                Some(Ok(ParsedValue::BulkString(bs_buffer)))
             }
         }
     }
@@ -130,12 +123,11 @@ impl<'a, 'b, I: ExactSizeIterator<Item = &'b u8>> RespItemParser<'a, 'b, I> {
 impl Parser {
     pub fn new() -> Self {
         Parser {
-            value_buffer: Vec::new(),
             bytes_buffer: VecDeque::new(),
         }
     }
 
-    pub fn parse(&mut self) -> Option<Value> {
+    pub fn parse(&mut self) -> Option<Result<ParsedValue, &'static [u8]>> {
         // TODO: pipeline support
         if self.bytes_buffer.is_empty() {
             return None;
@@ -150,20 +142,15 @@ impl Parser {
 
                 match parser.parse()? {
                     Ok(v) => {
-                        self.value_buffer.push(v);
                         let used = original_len - cursor.len();
                         self.bytes_buffer.drain(..used);
-                        None
+                        Some(Ok(v))
                     }
-                    Err(e) => Some(e),
+                    Err(e) => Some(Err(e)),
                 }
             }
-            _ => Some(Value::Error(b"ERR only RESP2 is supported".to_vec())),
+            _ => Some(Err(b"ERR only RESP2 is supported")),
         }
-    }
-
-    pub fn pop(&mut self) -> Option<Value> {
-        self.value_buffer.pop()
     }
 }
 

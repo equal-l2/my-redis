@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::value::Value;
+use crate::output_value::OutputValue;
 
 use num_bigint::BigUint;
 use num_integer::Integer;
@@ -53,8 +53,8 @@ impl ConnectionStore {
     pub fn set_db(&mut self, id: &ConnectionId, db_index: usize) {
         self.state_mut(id).db = db_index;
     }
-    pub fn list(&self) -> Value {
-        Value::BulkString(
+    pub fn list(&self) -> OutputValue {
+        OutputValue::BulkString(
             self.data
                 .iter()
                 .flat_map(|(id, state)| {

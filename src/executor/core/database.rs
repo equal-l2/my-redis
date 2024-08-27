@@ -1,110 +1,119 @@
 use std::collections::HashMap;
 
-use crate::value::Value;
+use crate::output_value::OutputValue;
 
 #[derive(Clone, Debug, Default)]
 pub struct Map {
-    data: HashMap<Vec<u8>, Value>,
+    data: HashMap<Vec<u8>, OutputValue>,
 }
 
 impl Map {
-    pub fn get(&self, key: &[u8]) -> Value {
-        self.data.get(key).cloned().unwrap_or(Value::NullBulkString)
+    pub fn get(&self, key: impl AsRef<[u8]>) -> OutputValue {
+        self.data
+            .get(key.as_ref())
+            .cloned()
+            .unwrap_or(OutputValue::NullBulkString)
     }
 
-    pub fn set(&mut self, key: &[u8], value: Vec<u8>) -> Value {
+    pub fn set(&mut self, key: impl AsRef<[u8]>, value: Vec<u8>) -> OutputValue {
         if value.len() > const { 512 * 1024 * 1024 } {
-            Value::Error(b"ERR value is too large".to_vec())
+            OutputValue::Error(b"ERR value is too large".to_vec())
         } else {
-            self.data.insert(key.to_vec(), Value::BulkString(value));
-            Value::Ok
+            self.data
+                .insert(key.as_ref().to_vec(), OutputValue::BulkString(value));
+            OutputValue::Ok
         }
     }
 
-    pub fn append(&mut self, key: &[u8], value: Vec<u8>) -> Value {
+    pub fn append(&mut self, key: impl AsRef<[u8]>, value: Vec<u8>) -> OutputValue {
+        let key = key.as_ref();
         if let Some(v) = self.data.get_mut(key) {
-            if let Value::BulkString(ref mut v) = v {
+            if let OutputValue::BulkString(ref mut v) = v {
                 v.extend(value);
-                Value::Integer(v.len() as i64)
+                OutputValue::Integer(v.len() as i64)
             } else {
-                Value::Error(b"ERR wrong target type for 'append'".to_vec())
+                OutputValue::Error(b"ERR wrong target type for 'append'".to_vec())
             }
         } else {
             let len = value.len();
-            self.data.insert(key.to_vec(), Value::BulkString(value));
-            Value::Integer(len as i64)
+            self.data
+                .insert(key.to_vec(), OutputValue::BulkString(value));
+            OutputValue::Integer(len as i64)
         }
     }
 
-    pub fn strlen(&self, key: &[u8]) -> Value {
-        if let Some(v) = self.data.get(key) {
-            if let Value::BulkString(ref v) = v {
-                Value::Integer(v.len() as i64)
+    pub fn strlen(&self, key: impl AsRef<[u8]>) -> OutputValue {
+        if let Some(v) = self.data.get(key.as_ref()) {
+            if let OutputValue::BulkString(ref v) = v {
+                OutputValue::Integer(v.len() as i64)
             } else {
-                Value::Error(b"ERR wrong target type for 'strlen'".to_vec())
+                OutputValue::Error(b"ERR wrong target type for 'strlen'".to_vec())
             }
         } else {
-            Value::Integer(0)
+            OutputValue::Integer(0)
         }
     }
 
-    pub fn exists(&self, keys: Vec<Vec<u8>>) -> Value {
+    pub fn exists(&self, keys: Vec<impl AsRef<[u8]>>) -> OutputValue {
         let len = keys
             .into_iter()
-            .filter(|k| self.data.contains_key(k))
+            .filter(|k| self.data.contains_key(k.as_ref()))
             .count();
-        Value::Integer(len as i64)
+        OutputValue::Integer(len as i64)
     }
 
-    pub fn flushdb(&mut self) -> Value {
+    pub fn flushdb(&mut self) -> OutputValue {
         // TODO: support async
         self.data.clear();
-        Value::Ok
+        OutputValue::Ok
     }
 
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
-    pub fn incr_by(&mut self, key: &[u8], n: i64) -> Value {
+    pub fn incr_by(&mut self, key: impl AsRef<[u8]>, n: i64) -> OutputValue {
+        let key = key.as_ref();
         if let Err(e) = self.incr_decr_check_key_value(key) {
             return e;
         }
-        if let Some(Value::BulkString(s)) = self.data.get_mut(key) {
+        if let Some(OutputValue::BulkString(s)) = self.data.get_mut(key) {
             let old_value: i64 = std::str::from_utf8(s).unwrap().parse().unwrap();
             let new_value = old_value.checked_add(n);
             if let Some(i) = new_value {
                 *s = i.to_string().into_bytes();
-                Value::Integer(i)
+                OutputValue::Integer(i)
             } else {
-                Value::Error(b"ERR integer overflow".to_vec())
+                OutputValue::Error(b"ERR integer overflow".to_vec())
             }
         } else {
             unreachable!()
         }
     }
 
-    pub fn decr_by(&mut self, key: &[u8], n: i64) -> Value {
+    pub fn decr_by(&mut self, key: impl AsRef<[u8]>, n: i64) -> OutputValue {
+        let key = key.as_ref();
         if let Err(e) = self.incr_decr_check_key_value(key) {
             return e;
         }
-        if let Some(Value::BulkString(s)) = self.data.get_mut(key) {
+        if let Some(OutputValue::BulkString(s)) = self.data.get_mut(key) {
             let old_value: i64 = std::str::from_utf8(s).unwrap().parse().unwrap();
             let new_value = old_value.checked_sub(n);
             if let Some(i) = new_value {
                 *s = i.to_string().into_bytes();
-                Value::Integer(i)
+                OutputValue::Integer(i)
             } else {
-                Value::Error(b"ERR integer overflow".to_vec())
+                OutputValue::Error(b"ERR integer overflow".to_vec())
             }
         } else {
             unreachable!()
         }
     }
 
-    pub fn incr_by_float(&mut self, key: &[u8], n: f64) -> Value {
+    pub fn incr_by_float(&mut self, key: impl AsRef<[u8]>, n: f64) -> OutputValue {
+        let key = key.as_ref();
         if let Some(v) = self.data.get_mut(key) {
-            if let Value::BulkString(s) = v {
+            if let OutputValue::BulkString(s) = v {
                 if let Some(old_value) = std::str::from_utf8(s)
                     .ok()
                     .and_then(|s| s.parse::<f64>().ok())
@@ -112,23 +121,26 @@ impl Map {
                     let new_value = old_value + n;
                     let new_s = new_value.to_string().into_bytes();
                     *s = new_s.clone();
-                    Value::BulkString(new_s)
+                    OutputValue::BulkString(new_s)
                 } else {
-                    Value::Error(b"ERR value is not an integer".to_vec())
+                    OutputValue::Error(b"ERR value is not an integer".to_vec())
                 }
             } else {
-                Value::Error(b"ERR value is not an integer".to_vec())
+                OutputValue::Error(b"ERR value is not an integer".to_vec())
             }
         } else {
-            self.data
-                .insert(key.to_vec(), Value::BulkString(n.to_string().into_bytes()));
+            self.data.insert(
+                key.to_vec(),
+                OutputValue::BulkString(n.to_string().into_bytes()),
+            );
             self.data.get(key).unwrap().clone()
         }
     }
 
-    fn incr_decr_check_key_value(&mut self, key: &[u8]) -> Result<(), Value> {
+    fn incr_decr_check_key_value(&mut self, key: impl AsRef<[u8]>) -> Result<(), OutputValue> {
+        let key = key.as_ref();
         if let Some(v) = self.data.get_mut(key) {
-            if let Value::BulkString(s) = v {
+            if let OutputValue::BulkString(s) = v {
                 if std::str::from_utf8(s)
                     .ok()
                     .and_then(|s| s.parse::<i64>().ok())
@@ -136,34 +148,34 @@ impl Map {
                 {
                     Ok(())
                 } else {
-                    Err(Value::Error(b"ERR value is not an integer".to_vec()))
+                    Err(OutputValue::Error(b"ERR value is not an integer".to_vec()))
                 }
             } else {
-                Err(Value::Error(b"ERR value is not an integer".to_vec()))
+                Err(OutputValue::Error(b"ERR value is not an integer".to_vec()))
             }
         } else {
             self.data
-                .insert(key.to_vec(), Value::BulkString(b"0".to_vec()));
+                .insert(key.to_owned(), OutputValue::BulkString(b"0".to_vec()));
             Ok(())
         }
     }
 
-    pub fn del(&mut self, keys: Vec<Vec<u8>>) -> Value {
-        Value::Integer(
+    pub fn del(&mut self, keys: Vec<impl AsRef<[u8]>>) -> OutputValue {
+        OutputValue::Integer(
             keys.into_iter()
-                .filter_map(|k| self.data.remove(&k))
+                .filter_map(|k| self.data.remove(k.as_ref()))
                 .count() as i64,
         )
     }
 
-    pub fn keys(&self, pattern: &[u8]) -> Value {
-        let finder = super::glob::Finder::new(pattern);
-        Value::Array(
+    pub fn keys(&self, pattern: impl AsRef<[u8]>) -> OutputValue {
+        let finder = super::glob::Finder::new(pattern.as_ref());
+        OutputValue::Array(
             self.data
                 .keys()
                 .filter(|k| finder.do_match(k))
                 .cloned()
-                .map(Value::BulkString)
+                .map(OutputValue::BulkString)
                 .collect(),
         )
     }

@@ -8,8 +8,13 @@ pub struct Map {
     data: HashMap<Vec<u8>, Value>,
 }
 
+pub trait Key: AsRef<[u8]> {}
+
+impl Key for Vec<u8> {}
+impl Key for &[u8] {}
+
 impl Map {
-    pub fn get(&self, key: impl AsRef<[u8]>) -> OutputValue {
+    pub fn get(&self, key: impl Key) -> OutputValue {
         let Some(data) = self.data.get(key.as_ref()) else {
             return OutputValue::NullBulkString;
         };
@@ -20,17 +25,37 @@ impl Map {
         }
     }
 
-    pub fn set(&mut self, key: impl AsRef<[u8]>, value: Vec<u8>) -> OutputValue {
-        if value.len() > const { 512 * 1024 * 1024 } {
-            OutputValue::Error(b"ERR value is too large".to_vec())
-        } else {
-            self.data
-                .insert(key.as_ref().to_vec(), Value::String(value));
-            OutputValue::Ok
-        }
+    pub fn mget(&self, key: Vec<impl Key>) -> OutputValue {
+        OutputValue::Array(
+            key.into_iter()
+                .map(|key| {
+                    if let Some(Value::String(s)) = self.data.get(key.as_ref()) {
+                        OutputValue::BulkString(s.clone())
+                    } else {
+                        OutputValue::NullBulkString
+                    }
+                })
+                .collect(),
+        )
     }
 
-    pub fn append(&mut self, key: impl AsRef<[u8]>, value: Vec<u8>) -> OutputValue {
+    pub fn mset(&mut self, key_values: Vec<Vec<u8>>) -> OutputValue {
+        debug_assert!(key_values.len() % 2 == 0);
+        for i in (0..key_values.len()).step_by(2) {
+            let key = key_values[i].clone();
+            let value = key_values[i + 1].clone();
+            self.data.insert(key, Value::String(value));
+        }
+        OutputValue::Ok
+    }
+
+    pub fn set(&mut self, key: impl Key, value: Vec<u8>) -> OutputValue {
+        self.data
+            .insert(key.as_ref().to_vec(), Value::String(value));
+        OutputValue::Ok
+    }
+
+    pub fn append(&mut self, key: impl Key, value: Vec<u8>) -> OutputValue {
         let key = key.as_ref();
         if let Some(v) = self.data.get_mut(key) {
             if let Value::String(ref mut v) = v {
@@ -46,7 +71,7 @@ impl Map {
         }
     }
 
-    pub fn strlen(&self, key: impl AsRef<[u8]>) -> OutputValue {
+    pub fn strlen(&self, key: impl Key) -> OutputValue {
         if let Some(v) = self.data.get(key.as_ref()) {
             if let Value::String(ref v) = v {
                 OutputValue::Integer(v.len() as i64)
@@ -58,7 +83,7 @@ impl Map {
         }
     }
 
-    pub fn exists(&self, keys: Vec<impl AsRef<[u8]>>) -> OutputValue {
+    pub fn exists(&self, keys: Vec<impl Key>) -> OutputValue {
         let len = keys
             .into_iter()
             .filter(|k| self.data.contains_key(k.as_ref()))
@@ -76,7 +101,7 @@ impl Map {
         self.data.len()
     }
 
-    pub fn incr_by(&mut self, key: impl AsRef<[u8]>, n: i64) -> OutputValue {
+    pub fn incr_by(&mut self, key: impl Key, n: i64) -> OutputValue {
         let key = key.as_ref();
         if let Err(e) = self.incr_decr_check_key_value(key) {
             return e;
@@ -95,7 +120,7 @@ impl Map {
         }
     }
 
-    pub fn decr_by(&mut self, key: impl AsRef<[u8]>, n: i64) -> OutputValue {
+    pub fn decr_by(&mut self, key: impl Key, n: i64) -> OutputValue {
         let key = key.as_ref();
         if let Err(e) = self.incr_decr_check_key_value(key) {
             return e;
@@ -114,7 +139,7 @@ impl Map {
         }
     }
 
-    pub fn incr_by_float(&mut self, key: impl AsRef<[u8]>, n: f64) -> OutputValue {
+    pub fn incr_by_float(&mut self, key: impl Key, n: f64) -> OutputValue {
         let key = key.as_ref();
         if let Some(v) = self.data.get_mut(key) {
             if let Value::String(s) = v {
@@ -143,7 +168,7 @@ impl Map {
         }
     }
 
-    fn incr_decr_check_key_value(&mut self, key: impl AsRef<[u8]>) -> Result<(), OutputValue> {
+    fn incr_decr_check_key_value(&mut self, key: impl Key) -> Result<(), OutputValue> {
         let key = key.as_ref();
         if let Some(v) = self.data.get_mut(key) {
             if let Value::String(s) = v {
@@ -166,7 +191,7 @@ impl Map {
         }
     }
 
-    pub fn del(&mut self, keys: Vec<impl AsRef<[u8]>>) -> OutputValue {
+    pub fn del(&mut self, keys: Vec<impl Key>) -> OutputValue {
         OutputValue::Integer(
             keys.into_iter()
                 .filter_map(|k| self.data.remove(k.as_ref()))
@@ -174,7 +199,7 @@ impl Map {
         )
     }
 
-    pub fn keys(&self, pattern: impl AsRef<[u8]>) -> OutputValue {
+    pub fn keys(&self, pattern: impl Key) -> OutputValue {
         let finder = glob::Finder::new(pattern.as_ref());
         OutputValue::Array(
             self.data

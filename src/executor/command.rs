@@ -54,7 +54,7 @@ impl Command for SimpleCommand {
     ) -> OutputValue {
         if !self.is_arity_correct(input.len()) {
             return OutputValue::Error(
-                format!("ERR wrong number of arguments for command '{}'", name).into_bytes(),
+                format!("ERR wrong number of arguments for '{}'", name).into_bytes(),
             );
         }
         (self.handler)(ex, id, input)
@@ -80,7 +80,7 @@ impl Command for ContainerCommand {
     ) -> OutputValue {
         if !self.is_arity_correct(input.len()) {
             return OutputValue::Error(
-                format!("ERR wrong number of arguments for command '{}'", name).into_bytes(),
+                format!("ERR wrong number of arguments for '{}'", name).into_bytes(),
             );
         }
         match (input.len(), self.handler) {
@@ -226,7 +226,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             // TODO: support options
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
-                ex.get_db(id).set(&key, value)
+                ex.get_db(id).set(key, value)
             },
         },
     );
@@ -331,7 +331,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             category: &[AclCategory::Write, AclCategory::String, AclCategory::Fast],
             handler: &move |ex, id, input| {
                 let (key, value) = get_first_two(input);
-                ex.get_db(id).append(&key, value)
+                ex.get_db(id).append(key, value)
             },
         },
     );
@@ -367,7 +367,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             category: &[AclCategory::Write, AclCategory::String, AclCategory::Fast],
             handler: &move |ex, id, input| {
                 let key = get_first(input);
-                ex.get_db(id).decr_by(&key, 1)
+                ex.get_db(id).decr_by(key, 1)
             },
         },
     );
@@ -382,7 +382,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
                 let Some(value) = value.parse_into() else {
                     return OutputValue::Error(b"ERR value is not an integer".to_vec());
                 };
-                ex.get_db(id).incr_by(&key, value)
+                ex.get_db(id).incr_by(key, value)
             },
         },
     );
@@ -397,7 +397,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
                 let Some(value) = value.parse_into() else {
                     return OutputValue::Error(b"ERR value is not an integer".to_vec());
                 };
-                ex.get_db(id).decr_by(&key, value)
+                ex.get_db(id).decr_by(key, value)
             },
         },
     );
@@ -412,7 +412,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
                 let Some(value) = value.parse_into() else {
                     return OutputValue::Error(b"ERR value is not an floating number".to_vec());
                 };
-                ex.get_db(id).incr_by_float(&key, value)
+                ex.get_db(id).incr_by_float(key, value)
             },
         },
     );
@@ -438,7 +438,32 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             ],
             handler: &move |ex, id, input| {
                 let pattern = get_first(input);
-                ex.get_db(id).keys(&pattern)
+                ex.get_db(id).keys(pattern)
+            },
+        },
+    );
+    map.insert(
+        "mget",
+        SimpleCommand {
+            arity_min: 1,
+            arity_max: None,
+            category: &[AclCategory::Read, AclCategory::String, AclCategory::Fast],
+            handler: &move |ex, id, input| ex.get_db(id).mget(input),
+        },
+    );
+    map.insert(
+        "mset",
+        SimpleCommand {
+            arity_min: 2,
+            arity_max: None,
+            category: &[AclCategory::Write, AclCategory::String, AclCategory::Slow],
+            handler: &move |ex, id, input| {
+                if input.len() % 2 != 0 {
+                    return OutputValue::Error(
+                        b"ERR wrong number of arguments for 'mget'".to_vec(),
+                    );
+                }
+                ex.get_db(id).mset(input)
             },
         },
     );

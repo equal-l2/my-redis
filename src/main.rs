@@ -6,15 +6,14 @@ use smol::prelude::*;
 
 mod bstr;
 mod executor;
-mod output_value;
 mod parser;
 
 use bstr::BStr;
-use executor::Executor;
+use executor::ExecutorWrapper;
 use parser::Parser;
 
 thread_local! {
-    static INSTANCE: std::cell::OnceCell<Executor> = const { std::cell::OnceCell::new() };
+    static INSTANCE: std::cell::OnceCell<ExecutorWrapper> = const { std::cell::OnceCell::new() };
 }
 
 fn remove_non_command_values(value: ParsedValue) -> Result<Vec<InputValue>, &'static [u8]> {
@@ -34,11 +33,12 @@ fn remove_non_command_values(value: ParsedValue) -> Result<Vec<InputValue>, &'st
 }
 
 async fn handle_stream(mut stream: TcpStream) {
-    let handle_opt =
-        INSTANCE.with(|inner| inner.get().unwrap().connect(stream.peer_addr().unwrap()));
-    let mut handle = if let Some(handle) = handle_opt {
-        handle
-    } else {
+    let handle_opt = INSTANCE.with(|inner| {
+        let addr = stream.peer_addr().unwrap();
+        let ex = inner.get().unwrap();
+        ex.connect(addr)
+    });
+    let Some(handle) = handle_opt else {
         stream
             .write_all(b"-ERR connection full, try again\r\n")
             .await
@@ -95,7 +95,7 @@ async fn handle_stream(mut stream: TcpStream) {
 }
 
 fn main() {
-    INSTANCE.with(|inner| inner.set(Executor::new(16)).unwrap());
+    INSTANCE.with(|inner| inner.set(ExecutorWrapper::new(16)).unwrap());
     let executor = smol::LocalExecutor::new();
     smol::block_on(executor.run(async {
         let listener = TcpListener::bind("127.0.0.1:7379").await.unwrap();

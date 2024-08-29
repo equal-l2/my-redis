@@ -2,14 +2,13 @@ use std::cell::LazyCell;
 use std::collections::HashMap;
 
 use super::acl::AclCategory;
-use super::ConnectionId;
-use super::ExecutorImpl;
+use super::connection::ConnectionId;
+use super::types::OutputValue;
+use super::Executor;
 use super::InputValue;
 use crate::bstr::BStr;
-use crate::output_value::OutputValue;
 
-type HandlerType =
-    dyn Fn(&mut ExecutorImpl, &ConnectionId, Vec<InputValue>) -> OutputValue + 'static;
+type HandlerType = dyn Fn(&mut Executor, &ConnectionId, Vec<InputValue>) -> OutputValue + 'static;
 
 pub struct SimpleCommand {
     pub handler: &'static HandlerType,
@@ -29,7 +28,7 @@ pub trait Command {
     fn execute(
         &self,
         name: &str,
-        ex: &mut ExecutorImpl,
+        ex: &mut Executor,
         id: &ConnectionId,
         input: Vec<InputValue>,
     ) -> OutputValue;
@@ -49,7 +48,7 @@ impl Command for SimpleCommand {
     fn execute(
         &self,
         name: &str,
-        ex: &mut ExecutorImpl,
+        ex: &mut Executor,
         id: &ConnectionId,
         input: Vec<Vec<u8>>,
     ) -> OutputValue {
@@ -75,7 +74,7 @@ impl Command for ContainerCommand {
     fn execute(
         &self,
         name: &str,
-        ex: &mut ExecutorImpl,
+        ex: &mut Executor,
         id: &ConnectionId,
         mut input: Vec<InputValue>,
     ) -> OutputValue {

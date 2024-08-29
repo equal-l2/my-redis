@@ -1,6 +1,6 @@
 use strum::IntoEnumIterator;
 
-use crate::output_value::OutputValue;
+use super::types::OutputValue;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, strum::EnumIter)]
 pub enum AclCategory {

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::output_value::OutputValue;
+use super::types::OutputValue;
 
 use num_bigint::BigUint;
 use num_integer::Integer;

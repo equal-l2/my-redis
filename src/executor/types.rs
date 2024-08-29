@@ -1,5 +1,7 @@
 use crate::bstr::BStr;
 
+pub type InputValue = Vec<u8>;
+
 #[derive(Clone, Debug)]
 pub enum OutputValue {
     SimpleString(Vec<u8>),

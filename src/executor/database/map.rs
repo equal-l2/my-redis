@@ -1,18 +1,23 @@
 use std::collections::HashMap;
 
-use crate::output_value::OutputValue;
-
-#[derive(Clone, Debug, Default)]
+use super::value::Value;
+use crate::executor::glob;
+use crate::executor::types::OutputValue;
+#[derive(Debug, Default)]
 pub struct Map {
-    data: HashMap<Vec<u8>, OutputValue>,
+    data: HashMap<Vec<u8>, Value>,
 }
 
 impl Map {
     pub fn get(&self, key: impl AsRef<[u8]>) -> OutputValue {
-        self.data
-            .get(key.as_ref())
-            .cloned()
-            .unwrap_or(OutputValue::NullBulkString)
+        let Some(data) = self.data.get(key.as_ref()) else {
+            return OutputValue::NullBulkString;
+        };
+        if let Value::String(s) = data {
+            OutputValue::BulkString(s.clone())
+        } else {
+            OutputValue::Error(b"ERR wrong target type for 'get'".to_vec())
+        }
     }
 
     pub fn set(&mut self, key: impl AsRef<[u8]>, value: Vec<u8>) -> OutputValue {
@@ -20,7 +25,7 @@ impl Map {
             OutputValue::Error(b"ERR value is too large".to_vec())
         } else {
             self.data
-                .insert(key.as_ref().to_vec(), OutputValue::BulkString(value));
+                .insert(key.as_ref().to_vec(), Value::String(value));
             OutputValue::Ok
         }
     }
@@ -28,7 +33,7 @@ impl Map {
     pub fn append(&mut self, key: impl AsRef<[u8]>, value: Vec<u8>) -> OutputValue {
         let key = key.as_ref();
         if let Some(v) = self.data.get_mut(key) {
-            if let OutputValue::BulkString(ref mut v) = v {
+            if let Value::String(ref mut v) = v {
                 v.extend(value);
                 OutputValue::Integer(v.len() as i64)
             } else {
@@ -36,15 +41,14 @@ impl Map {
             }
         } else {
             let len = value.len();
-            self.data
-                .insert(key.to_vec(), OutputValue::BulkString(value));
+            self.data.insert(key.to_vec(), Value::String(value));
             OutputValue::Integer(len as i64)
         }
     }
 
     pub fn strlen(&self, key: impl AsRef<[u8]>) -> OutputValue {
         if let Some(v) = self.data.get(key.as_ref()) {
-            if let OutputValue::BulkString(ref v) = v {
+            if let Value::String(ref v) = v {
                 OutputValue::Integer(v.len() as i64)
             } else {
                 OutputValue::Error(b"ERR wrong target type for 'strlen'".to_vec())
@@ -77,7 +81,7 @@ impl Map {
         if let Err(e) = self.incr_decr_check_key_value(key) {
             return e;
         }
-        if let Some(OutputValue::BulkString(s)) = self.data.get_mut(key) {
+        if let Some(Value::String(s)) = self.data.get_mut(key) {
             let old_value: i64 = std::str::from_utf8(s).unwrap().parse().unwrap();
             let new_value = old_value.checked_add(n);
             if let Some(i) = new_value {
@@ -96,7 +100,7 @@ impl Map {
         if let Err(e) = self.incr_decr_check_key_value(key) {
             return e;
         }
-        if let Some(OutputValue::BulkString(s)) = self.data.get_mut(key) {
+        if let Some(Value::String(s)) = self.data.get_mut(key) {
             let old_value: i64 = std::str::from_utf8(s).unwrap().parse().unwrap();
             let new_value = old_value.checked_sub(n);
             if let Some(i) = new_value {
@@ -113,7 +117,7 @@ impl Map {
     pub fn incr_by_float(&mut self, key: impl AsRef<[u8]>, n: f64) -> OutputValue {
         let key = key.as_ref();
         if let Some(v) = self.data.get_mut(key) {
-            if let OutputValue::BulkString(s) = v {
+            if let Value::String(s) = v {
                 if let Some(old_value) = std::str::from_utf8(s)
                     .ok()
                     .and_then(|s| s.parse::<f64>().ok())
@@ -129,18 +133,20 @@ impl Map {
                 OutputValue::Error(b"ERR value is not an integer".to_vec())
             }
         } else {
-            self.data.insert(
-                key.to_vec(),
-                OutputValue::BulkString(n.to_string().into_bytes()),
-            );
-            self.data.get(key).unwrap().clone()
+            self.data
+                .insert(key.to_vec(), Value::String(n.to_string().into_bytes()));
+            if let Value::String(s) = self.data.get(key).unwrap() {
+                OutputValue::BulkString(s.clone())
+            } else {
+                unreachable!()
+            }
         }
     }
 
     fn incr_decr_check_key_value(&mut self, key: impl AsRef<[u8]>) -> Result<(), OutputValue> {
         let key = key.as_ref();
         if let Some(v) = self.data.get_mut(key) {
-            if let OutputValue::BulkString(s) = v {
+            if let Value::String(s) = v {
                 if std::str::from_utf8(s)
                     .ok()
                     .and_then(|s| s.parse::<i64>().ok())
@@ -155,7 +161,7 @@ impl Map {
             }
         } else {
             self.data
-                .insert(key.to_owned(), OutputValue::BulkString(b"0".to_vec()));
+                .insert(key.to_owned(), Value::String(b"0".to_vec()));
             Ok(())
         }
     }
@@ -169,7 +175,7 @@ impl Map {
     }
 
     pub fn keys(&self, pattern: impl AsRef<[u8]>) -> OutputValue {
-        let finder = super::glob::Finder::new(pattern.as_ref());
+        let finder = glob::Finder::new(pattern.as_ref());
         OutputValue::Array(
             self.data
                 .keys()
@@ -178,34 +184,5 @@ impl Map {
                 .map(OutputValue::BulkString)
                 .collect(),
         )
-    }
-}
-
-#[derive(Debug)]
-pub struct Database {
-    db: Vec<Map>,
-}
-
-impl Database {
-    pub fn new(db_count: usize) -> Self {
-        Self {
-            db: vec![Map::default(); db_count],
-        }
-    }
-
-    pub fn get(&mut self, db_index: usize) -> &mut Map {
-        self.db.get_mut(db_index).unwrap()
-    }
-
-    pub fn swap(&mut self, db_index1: usize, db_index2: usize) {
-        self.db.swap(db_index1, db_index2);
-    }
-
-    pub fn len(&self) -> usize {
-        self.db.len()
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Map> {
-        self.db.iter_mut()
     }
 }

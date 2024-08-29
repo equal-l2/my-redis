@@ -1,31 +1,25 @@
-use database::Map;
 use smol::net::SocketAddr;
 
-use crate::{bstr::BStr, output_value::OutputValue};
+use crate::bstr::BStr;
 
-mod acl;
-mod command;
-mod connection;
-mod database;
-mod glob;
-
-use command::{Command, CONTAINER_COMMANDS, SIMPLE_COMMANDS};
-use connection::ConnectionStore;
-use database::Database;
-
-pub use connection::ConnectionId;
+use super::command::{Command, CONTAINER_COMMANDS, SIMPLE_COMMANDS};
+use super::connection::ConnectionId;
+use super::connection::ConnectionStore;
+use super::database::Database;
+use super::database::Map;
+use super::types::OutputValue;
 
 use super::InputValue;
 
 #[derive(Debug)]
-pub struct ExecutorImpl {
+pub struct Executor {
     db: Database,
     cons: ConnectionStore,
 }
 
-impl ExecutorImpl {
+impl Executor {
     pub fn new(db_count: usize) -> Self {
-        ExecutorImpl {
+        Executor {
             db: Database::new(db_count),
             cons: ConnectionStore::default(),
         }

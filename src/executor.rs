@@ -1,60 +1,61 @@
 use smol::net::SocketAddr;
 
+mod acl;
+mod command;
+mod connection;
 mod core;
+mod database;
+mod glob;
+mod types;
 
-use core::{ConnectionId, ExecutorImpl};
+use core::Executor;
+use std::ops::Deref;
 
-pub type InputValue = Vec<u8>;
+pub use types::InputValue;
 
 #[derive(Debug)]
-pub struct Executor {
-    ex: std::rc::Rc<std::cell::RefCell<ExecutorImpl>>,
-}
+pub struct ExecutorWrapper(std::rc::Rc<std::cell::RefCell<Executor>>);
 
-pub struct Handle {
-    ex: Executor,
-    con_id: core::ConnectionId,
-}
-
-impl Executor {
-    pub fn new(db_count: usize) -> Self {
-        Executor {
-            ex: std::rc::Rc::new(std::cell::RefCell::new(ExecutorImpl::new(db_count))),
-        }
+impl Deref for ExecutorWrapper {
+    type Target = std::rc::Rc<std::cell::RefCell<Executor>>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
+}
 
-    fn execute(&mut self, arr: Vec<InputValue>, con: ConnectionId) -> Vec<u8> {
-        self.ex.borrow_mut().execute(arr, con)
+impl Clone for ExecutorWrapper {
+    fn clone(&self) -> Self {
+        ExecutorWrapper(self.0.clone())
+    }
+}
+
+impl ExecutorWrapper {
+    pub fn new(db_count: usize) -> Self {
+        ExecutorWrapper(std::rc::Rc::new(std::cell::RefCell::new(Executor::new(
+            db_count,
+        ))))
     }
 
     pub fn connect(&self, addr: SocketAddr) -> Option<Handle> {
-        self.ex.borrow_mut().connect(addr).map(|con_id| Handle {
+        self.borrow_mut().connect(addr).map(|con_id| Handle {
             ex: self.clone(),
             con_id,
         })
     }
-
-    pub fn disconnect(&mut self, con_id: ConnectionId) {
-        self.ex.borrow_mut().disconnect(con_id);
-    }
 }
-
-impl Clone for Executor {
-    fn clone(&self) -> Self {
-        Executor {
-            ex: self.ex.clone(),
-        }
-    }
+pub struct Handle {
+    ex: ExecutorWrapper,
+    con_id: connection::ConnectionId,
 }
 
 impl Handle {
-    pub fn execute(&mut self, input: Vec<InputValue>) -> Vec<u8> {
-        self.ex.execute(input, self.con_id.clone())
+    pub fn execute(&self, input: Vec<InputValue>) -> Vec<u8> {
+        self.ex.borrow_mut().execute(input, self.con_id.clone())
     }
 }
 
 impl Drop for Handle {
     fn drop(&mut self) {
-        self.ex.disconnect(self.con_id.clone());
+        self.ex.borrow_mut().disconnect(self.con_id.clone());
     }
 }

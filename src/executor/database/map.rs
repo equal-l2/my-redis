@@ -228,3 +228,43 @@ impl Map {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set() {
+        let mut map = Map::default();
+        map.set(b"foo".as_slice(), b"bar".to_vec());
+        assert_eq!(
+            map.get(b"foo".as_slice()),
+            OutputValue::BulkString(b"bar".to_vec())
+        );
+    }
+
+    #[test]
+    fn test_set_overwrite() {
+        let mut map = Map::default();
+        map.set(b"foo".as_slice(), b"bar".to_vec());
+        map.set(b"fizz".as_slice(), b"bazz".to_vec());
+        assert_eq!(
+            map.get(b"foo".as_slice()),
+            OutputValue::BulkString(b"bar".to_vec())
+        );
+        assert_eq!(
+            map.get(b"fizz".as_slice()),
+            OutputValue::BulkString(b"bazz".to_vec())
+        );
+
+        map.set(b"foo".as_slice(), b"fuga".to_vec());
+        assert_eq!(
+            map.get(b"foo".as_slice()),
+            OutputValue::BulkString(b"fuga".to_vec())
+        );
+        assert_eq!(
+            map.get(b"fizz".as_slice()),
+            OutputValue::BulkString(b"bazz".to_vec())
+        );
+    }
+}

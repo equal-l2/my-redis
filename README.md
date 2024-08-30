@@ -10,7 +10,11 @@ Recreation of Redis, for fun.
 
 # Short-Term Goal
 - Communication via RESP2
-- Implement commands
+- Implementing commands
+  - Implementing `list`
+  - Implementing `set`
+  - Implementing `hash`
 
 # Long-Term Goal
+- Expiration mechanism
 - Interoperability with Redis Cluster

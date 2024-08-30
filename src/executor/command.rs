@@ -10,6 +10,25 @@ use crate::bstr::BStr;
 
 type HandlerType = dyn Fn(&mut Executor, &ConnectionId, Vec<InputValue>) -> OutputValue + 'static;
 
+trait HashMapExt<K, V>
+where
+    K: Eq + std::hash::Hash,
+{
+    fn insert_without_duplicate(&mut self, key: K, value: V);
+}
+
+impl<K, V> HashMapExt<K, V> for HashMap<K, V>
+where
+    K: Eq + std::hash::Hash,
+{
+    fn insert_without_duplicate(&mut self, key: K, value: V) {
+        let out = self.insert(key, value);
+        if out.is_some() {
+            panic!("Duplicate key");
+        }
+    }
+}
+
 pub struct SimpleCommand {
     pub handler: &'static HandlerType,
     pub category: &'static [AclCategory],
@@ -181,7 +200,7 @@ fn get_first_three<T>(args: Vec<T>) -> (T, T, T) {
 
 fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
     let mut map = HashMap::<&'static str, SimpleCommand>::new();
-    map.insert(
+    map.insert_without_duplicate(
         "ping",
         SimpleCommand {
             arity_min: 0,
@@ -196,7 +215,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "echo",
         SimpleCommand {
             arity_min: 1,
@@ -205,7 +224,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             handler: &move |_, _, input| OutputValue::BulkString(get_first(input)),
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "get",
         SimpleCommand {
             arity_min: 1,
@@ -217,7 +236,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "set",
         SimpleCommand {
             arity_min: 2,
@@ -231,7 +250,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
         },
     );
 
-    map.insert(
+    map.insert_without_duplicate(
         "select",
         SimpleCommand {
             arity_min: 1,
@@ -247,7 +266,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "flushdb",
         SimpleCommand {
             arity_min: 0,
@@ -264,7 +283,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "flushall",
         SimpleCommand {
             arity_min: 0,
@@ -281,7 +300,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "swapdb",
         SimpleCommand {
             arity_min: 2,
@@ -305,7 +324,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
         },
     );
 
-    map.insert(
+    map.insert_without_duplicate(
         "dbsize",
         SimpleCommand {
             arity_min: 0,
@@ -314,7 +333,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             handler: &move |ex, id, _| OutputValue::Integer(ex.get_db(id).len() as i64),
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "exists",
         SimpleCommand {
             arity_min: 1,
@@ -323,7 +342,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             handler: &move |ex, id, input| ex.get_db(id).exists(input),
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "append",
         SimpleCommand {
             arity_min: 2,
@@ -335,7 +354,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "strlen",
         SimpleCommand {
             arity_min: 1,
@@ -347,7 +366,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "incr",
         SimpleCommand {
             arity_min: 1,
@@ -359,7 +378,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "decr",
         SimpleCommand {
             arity_min: 1,
@@ -371,7 +390,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "incrby",
         SimpleCommand {
             arity_min: 2,
@@ -386,7 +405,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "decrby",
         SimpleCommand {
             arity_min: 2,
@@ -401,7 +420,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "incrbyfloat",
         SimpleCommand {
             arity_min: 2,
@@ -416,7 +435,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "del",
         SimpleCommand {
             arity_min: 1,
@@ -425,7 +444,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             handler: &move |ex, id, input| ex.get_db(id).del(input),
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "keys",
         SimpleCommand {
             arity_min: 1,
@@ -442,7 +461,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "mget",
         SimpleCommand {
             arity_min: 1,
@@ -451,7 +470,7 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             handler: &move |ex, id, input| ex.get_db(id).mget(input),
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "mset",
         SimpleCommand {
             arity_min: 2,
@@ -467,19 +486,35 @@ fn initialise_simple_commands() -> HashMap<&'static str, SimpleCommand> {
             },
         },
     );
+    map.insert_without_duplicate(
+        "msetnx",
+        SimpleCommand {
+            arity_min: 2,
+            arity_max: None,
+            category: &[AclCategory::Write, AclCategory::String, AclCategory::Slow],
+            handler: &move |ex, id, input| {
+                if input.len() % 2 != 0 {
+                    return OutputValue::Error(
+                        b"ERR wrong number of arguments for 'mget'".to_vec(),
+                    );
+                }
+                ex.get_db(id).msetnx(input)
+            },
+        },
+    );
     map
 }
 
 fn initialise_container_commands() -> HashMap<&'static str, ContainerCommand> {
     let mut map = HashMap::new();
-    map.insert(
+    map.insert_without_duplicate(
         "acl",
         ContainerCommand {
             category: &[AclCategory::Slow],
             handler: None,
             subcommands: {
                 let mut map = HashMap::new();
-                map.insert(
+                map.insert_without_duplicate(
                     "cat",
                     SimpleCommand {
                         arity_min: 0,
@@ -507,14 +542,14 @@ fn initialise_container_commands() -> HashMap<&'static str, ContainerCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "client",
         ContainerCommand {
             handler: None,
             category: &[AclCategory::Slow],
             subcommands: {
                 let mut map = HashMap::new();
-                map.insert(
+                map.insert_without_duplicate(
                     "id",
                     SimpleCommand {
                         arity_min: 0,
@@ -530,7 +565,7 @@ fn initialise_container_commands() -> HashMap<&'static str, ContainerCommand> {
                         },
                     },
                 );
-                map.insert(
+                map.insert_without_duplicate(
                     "list",
                     SimpleCommand {
                         arity_min: 0,
@@ -548,7 +583,7 @@ fn initialise_container_commands() -> HashMap<&'static str, ContainerCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "command",
         ContainerCommand {
             category: &[AclCategory::Slow, AclCategory::Connection],
@@ -557,7 +592,7 @@ fn initialise_container_commands() -> HashMap<&'static str, ContainerCommand> {
             }),
             subcommands: {
                 let mut map = HashMap::new();
-                map.insert(
+                map.insert_without_duplicate(
                     "count",
                     SimpleCommand {
                         arity_min: 0,
@@ -568,7 +603,7 @@ fn initialise_container_commands() -> HashMap<&'static str, ContainerCommand> {
                         },
                     },
                 );
-                map.insert(
+                map.insert_without_duplicate(
                     "list",
                     SimpleCommand {
                         arity_min: 0,
@@ -666,14 +701,14 @@ fn initialise_container_commands() -> HashMap<&'static str, ContainerCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "function",
         ContainerCommand {
             category: &[AclCategory::Slow],
             handler: None,
             subcommands: {
                 let mut map = HashMap::new();
-                map.insert(
+                map.insert_without_duplicate(
                     "flush",
                     SimpleCommand {
                         arity_min: 0,
@@ -693,14 +728,14 @@ fn initialise_container_commands() -> HashMap<&'static str, ContainerCommand> {
             },
         },
     );
-    map.insert(
+    map.insert_without_duplicate(
         "config",
         ContainerCommand {
             category: &[AclCategory::Slow],
             handler: None,
             subcommands: {
                 let mut map = HashMap::new();
-                map.insert(
+                map.insert_without_duplicate(
                     "get",
                     SimpleCommand {
                         arity_min: 1,

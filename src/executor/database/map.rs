@@ -49,6 +49,23 @@ impl Map {
         OutputValue::Ok
     }
 
+    pub fn msetnx(&mut self, key_values: Vec<Vec<u8>>) -> OutputValue {
+        debug_assert!(key_values.len() % 2 == 0);
+        let any_key_exists = key_values
+            .iter()
+            .step_by(2)
+            .any(|k| self.data.contains_key(k));
+        if !any_key_exists {
+            return OutputValue::Integer(0);
+        }
+        for i in (0..key_values.len()).step_by(2) {
+            let key = key_values[i].clone();
+            let value = key_values[i + 1].clone();
+            self.data.insert(key, Value::String(value));
+        }
+        OutputValue::Integer(1)
+    }
+
     pub fn set(&mut self, key: impl Key, value: Vec<u8>) -> OutputValue {
         self.data
             .insert(key.as_ref().to_vec(), Value::String(value));

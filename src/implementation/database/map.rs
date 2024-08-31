@@ -1,20 +1,53 @@
 use std::collections::HashMap;
 
+use crate::interface::database::map::{
+    IMap, Key, MapAllCommands, MapMiscCommands, MapStringCommands,
+};
+use crate::interface::types::OutputValue;
+
+use super::super::glob;
 use super::value::Value;
-use crate::executor::glob;
-use crate::executor::types::OutputValue;
+
 #[derive(Debug, Default)]
 pub struct Map {
     data: HashMap<Vec<u8>, Value>,
 }
 
-pub trait Key: AsRef<[u8]> {}
-
-impl Key for Vec<u8> {}
-impl Key for &[u8] {}
-
 impl Map {
-    pub fn get(&self, key: impl Key) -> OutputValue {
+    fn incr_decr_check_key_value(&mut self, key: impl Key) -> Result<(), OutputValue> {
+        let key = key.as_ref();
+        if let Some(v) = self.data.get_mut(key) {
+            if let Value::String(s) = v {
+                if std::str::from_utf8(s)
+                    .ok()
+                    .and_then(|s| s.parse::<i64>().ok())
+                    .is_some()
+                {
+                    Ok(())
+                } else {
+                    Err(OutputValue::Error(b"ERR value is not an integer".to_vec()))
+                }
+            } else {
+                Err(OutputValue::Error(b"ERR value is not an integer".to_vec()))
+            }
+        } else {
+            self.data
+                .insert(key.to_owned(), Value::String(b"0".to_vec()));
+            Ok(())
+        }
+    }
+}
+
+impl IMap for Map {
+    fn flushdb(&mut self) -> OutputValue {
+        // TODO: support async
+        self.data.clear();
+        OutputValue::Ok
+    }
+}
+
+impl MapStringCommands for Map {
+    fn get(&self, key: impl Key) -> OutputValue {
         let Some(data) = self.data.get(key.as_ref()) else {
             return OutputValue::NullBulkString;
         };
@@ -25,7 +58,7 @@ impl Map {
         }
     }
 
-    pub fn mget(&self, key: Vec<impl Key>) -> OutputValue {
+    fn mget(&self, key: Vec<impl Key>) -> OutputValue {
         OutputValue::Array(
             key.into_iter()
                 .map(|key| {
@@ -39,7 +72,7 @@ impl Map {
         )
     }
 
-    pub fn mset(&mut self, key_values: Vec<Vec<u8>>) -> OutputValue {
+    fn mset(&mut self, key_values: Vec<Vec<u8>>) -> OutputValue {
         debug_assert!(key_values.len() % 2 == 0);
         for i in (0..key_values.len()).step_by(2) {
             let key = key_values[i].clone();
@@ -49,7 +82,7 @@ impl Map {
         OutputValue::Ok
     }
 
-    pub fn msetnx(&mut self, key_values: Vec<Vec<u8>>) -> OutputValue {
+    fn msetnx(&mut self, key_values: Vec<Vec<u8>>) -> OutputValue {
         debug_assert!(key_values.len() % 2 == 0);
         let any_key_exists = key_values
             .iter()
@@ -66,13 +99,13 @@ impl Map {
         OutputValue::Integer(1)
     }
 
-    pub fn set(&mut self, key: impl Key, value: Vec<u8>) -> OutputValue {
+    fn set(&mut self, key: impl Key, value: Vec<u8>) -> OutputValue {
         self.data
             .insert(key.as_ref().to_vec(), Value::String(value));
         OutputValue::Ok
     }
 
-    pub fn append(&mut self, key: impl Key, value: Vec<u8>) -> OutputValue {
+    fn append(&mut self, key: impl Key, value: Vec<u8>) -> OutputValue {
         let key = key.as_ref();
         if let Some(v) = self.data.get_mut(key) {
             if let Value::String(ref mut v) = v {
@@ -88,7 +121,7 @@ impl Map {
         }
     }
 
-    pub fn strlen(&self, key: impl Key) -> OutputValue {
+    fn strlen(&self, key: impl Key) -> OutputValue {
         if let Some(v) = self.data.get(key.as_ref()) {
             if let Value::String(ref v) = v {
                 OutputValue::Integer(v.len() as i64)
@@ -100,25 +133,7 @@ impl Map {
         }
     }
 
-    pub fn exists(&self, keys: Vec<impl Key>) -> OutputValue {
-        let len = keys
-            .into_iter()
-            .filter(|k| self.data.contains_key(k.as_ref()))
-            .count();
-        OutputValue::Integer(len as i64)
-    }
-
-    pub fn flushdb(&mut self) -> OutputValue {
-        // TODO: support async
-        self.data.clear();
-        OutputValue::Ok
-    }
-
-    pub fn len(&self) -> usize {
-        self.data.len()
-    }
-
-    pub fn incr_by(&mut self, key: impl Key, n: i64) -> OutputValue {
+    fn incrby(&mut self, key: impl Key, n: i64) -> OutputValue {
         let key = key.as_ref();
         if let Err(e) = self.incr_decr_check_key_value(key) {
             return e;
@@ -137,7 +152,7 @@ impl Map {
         }
     }
 
-    pub fn decr_by(&mut self, key: impl Key, n: i64) -> OutputValue {
+    fn decrby(&mut self, key: impl Key, n: i64) -> OutputValue {
         let key = key.as_ref();
         if let Err(e) = self.incr_decr_check_key_value(key) {
             return e;
@@ -156,7 +171,7 @@ impl Map {
         }
     }
 
-    pub fn incr_by_float(&mut self, key: impl Key, n: f64) -> OutputValue {
+    fn incrbyfloat(&mut self, key: impl Key, n: f64) -> OutputValue {
         let key = key.as_ref();
         if let Some(v) = self.data.get_mut(key) {
             if let Value::String(s) = v {
@@ -184,31 +199,10 @@ impl Map {
             }
         }
     }
+}
 
-    fn incr_decr_check_key_value(&mut self, key: impl Key) -> Result<(), OutputValue> {
-        let key = key.as_ref();
-        if let Some(v) = self.data.get_mut(key) {
-            if let Value::String(s) = v {
-                if std::str::from_utf8(s)
-                    .ok()
-                    .and_then(|s| s.parse::<i64>().ok())
-                    .is_some()
-                {
-                    Ok(())
-                } else {
-                    Err(OutputValue::Error(b"ERR value is not an integer".to_vec()))
-                }
-            } else {
-                Err(OutputValue::Error(b"ERR value is not an integer".to_vec()))
-            }
-        } else {
-            self.data
-                .insert(key.to_owned(), Value::String(b"0".to_vec()));
-            Ok(())
-        }
-    }
-
-    pub fn del(&mut self, keys: Vec<impl Key>) -> OutputValue {
+impl MapMiscCommands for Map {
+    fn del(&mut self, keys: Vec<impl Key>) -> OutputValue {
         OutputValue::Integer(
             keys.into_iter()
                 .filter_map(|k| self.data.remove(k.as_ref()))
@@ -216,18 +210,31 @@ impl Map {
         )
     }
 
-    pub fn keys(&self, pattern: impl Key) -> OutputValue {
+    fn keys(&self, pattern: impl Key) -> OutputValue {
         let finder = glob::Finder::new(pattern.as_ref());
         OutputValue::Array(
             self.data
                 .keys()
-                .filter(|k| finder.do_match(k))
+                .filter(|k| finder.it_matches(k))
                 .cloned()
                 .map(OutputValue::BulkString)
                 .collect(),
         )
     }
+    fn exists(&self, keys: Vec<impl Key>) -> OutputValue {
+        let len = keys
+            .into_iter()
+            .filter(|k| self.data.contains_key(k.as_ref()))
+            .count();
+        OutputValue::Integer(len as i64)
+    }
+
+    fn len(&self) -> usize {
+        self.data.len()
+    }
 }
+
+impl MapAllCommands for Map {}
 
 #[cfg(test)]
 mod tests {

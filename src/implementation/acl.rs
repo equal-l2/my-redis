@@ -1,8 +1,8 @@
 use strum::IntoEnumIterator;
 
-use super::types::OutputValue;
+use crate::interface::types::OutputValue;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, strum::EnumIter)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, strum::EnumIter)]
 pub enum AclCategory {
     Admin,
     Connection,

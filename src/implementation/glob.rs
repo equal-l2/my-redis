@@ -71,7 +71,7 @@ impl Finder {
         Finder::RequiresMatch(nodes)
     }
 
-    pub fn do_match(&self, input: &[u8]) -> bool {
+    pub fn it_matches(&self, input: &[u8]) -> bool {
         debug_assert!(!input.is_empty());
         match self {
             Finder::NoMatch => false,
@@ -369,7 +369,7 @@ mod test {
     fn helper(pattern: &[u8], input: &[u8]) -> bool {
         let parser = Finder::new(pattern);
         eprintln!("{:?}", parser);
-        parser.do_match(input)
+        parser.it_matches(input)
     }
 
     #[test]

@@ -1,18 +1,9 @@
-use std::collections::BTreeMap;
-
-use super::types::OutputValue;
-
-use num_bigint::BigUint;
 use num_integer::Integer;
 use smol::net::SocketAddr;
+use std::collections::BTreeMap;
 
-#[derive(Debug)]
-pub struct ConnectionState {
-    pub db: usize,
-    pub addr: SocketAddr,
-}
-
-pub type ConnectionId = BigUint;
+use crate::interface::connection::{ConnectionId, ConnectionState, IConnectionStore};
+use crate::interface::types::OutputValue;
 
 #[derive(Debug, Default)]
 pub struct ConnectionStore {
@@ -26,34 +17,35 @@ impl ConnectionState {
     }
 }
 
-impl ConnectionStore {
-    pub fn state(&self, id: &ConnectionId) -> &ConnectionState {
+impl IConnectionStore for ConnectionStore {
+    fn get_state(&self, id: &ConnectionId) -> &ConnectionState {
         self.data.get(id).unwrap()
     }
 
-    pub fn state_mut(&mut self, id: &ConnectionId) -> &mut ConnectionState {
+    fn get_state_mut(&mut self, id: &ConnectionId) -> &mut ConnectionState {
         self.data.get_mut(id).unwrap()
     }
 
-    pub fn connect(&mut self, addr: SocketAddr) -> Option<ConnectionId> {
+    fn connect(&mut self, addr: SocketAddr) -> ConnectionId {
         let id = self.next_id.clone();
         self.next_id.inc();
         self.data.insert(id.clone(), ConnectionState::new(addr));
-        Some(id)
+        id
     }
 
-    pub fn disconnect(&mut self, id: &ConnectionId) {
+    fn disconnect(&mut self, id: &ConnectionId) {
         self.data.remove(id);
     }
 
-    pub fn has(&self, id: &ConnectionId) -> bool {
+    fn has(&self, id: &ConnectionId) -> bool {
         self.data.contains_key(id)
     }
 
-    pub fn set_db(&mut self, id: &ConnectionId, db_index: usize) {
-        self.state_mut(id).db = db_index;
+    fn set_db(&mut self, id: &ConnectionId, db_index: usize) {
+        self.get_state_mut(id).db = db_index;
     }
-    pub fn list(&self) -> OutputValue {
+
+    fn list(&self) -> OutputValue {
         OutputValue::BulkString(
             self.data
                 .iter()

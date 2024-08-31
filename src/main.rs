@@ -1,19 +1,21 @@
-use executor::InputValue;
-use parser::ParsedValue;
 use smol::net::TcpListener;
 use smol::net::TcpStream;
 use smol::prelude::*;
 
 mod bstr;
-mod executor;
+mod implementation;
+mod interface;
 mod parser;
+mod wrapper;
 
 use bstr::BStr;
-use executor::ExecutorWrapper;
+use interface::types::InputValue;
+use parser::ParsedValue;
 use parser::Parser;
+use wrapper::ControllerWrapper;
 
 thread_local! {
-    static INSTANCE: std::cell::OnceCell<ExecutorWrapper> = const { std::cell::OnceCell::new() };
+    static INSTANCE: std::cell::OnceCell<ControllerWrapper> = const { std::cell::OnceCell::new() };
 }
 
 fn remove_non_command_values(value: ParsedValue) -> Result<Vec<InputValue>, &'static [u8]> {
@@ -33,19 +35,11 @@ fn remove_non_command_values(value: ParsedValue) -> Result<Vec<InputValue>, &'st
 }
 
 async fn handle_stream(mut stream: TcpStream) {
-    let handle_opt = INSTANCE.with(|inner| {
+    let handle = INSTANCE.with(|inner| {
         let addr = stream.peer_addr().unwrap();
         let ex = inner.get().unwrap();
         ex.connect(addr)
     });
-    let Some(handle) = handle_opt else {
-        stream
-            .write_all(b"-ERR connection full, try again\r\n")
-            .await
-            .unwrap();
-        stream.shutdown(std::net::Shutdown::Both).unwrap();
-        return;
-    };
     let mut buffer = [0; 1024];
     let mut parser = Parser::new();
     let mut stop = false;
@@ -88,14 +82,14 @@ async fn handle_stream(mut stream: TcpStream) {
             .collect();
 
         for v in results.into_iter() {
-            stream.write_all(&v).await.unwrap();
+            stream.write_all(v.as_slice()).await.unwrap();
             stream.flush().await.unwrap();
         }
     }
 }
 
 fn main() {
-    INSTANCE.with(|inner| inner.set(ExecutorWrapper::new(16)).unwrap());
+    INSTANCE.with(|inner| inner.set(ControllerWrapper::new(16)).unwrap());
     let executor = smol::LocalExecutor::new();
     smol::block_on(executor.run(async {
         let listener = TcpListener::bind("127.0.0.1:7379").await.unwrap();

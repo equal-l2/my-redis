@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::VecDeque;
 
 type RedisString = Vec<u8>;
 
@@ -6,5 +7,5 @@ type RedisString = Vec<u8>;
 pub enum Value {
     String(RedisString),
     Hash(HashMap<RedisString, RedisString>),
-    List(Vec<RedisString>),
+    List(VecDeque<RedisString>),
 }

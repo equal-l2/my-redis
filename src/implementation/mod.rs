@@ -10,7 +10,7 @@ mod connection;
 pub mod database;
 mod glob;
 
-use crate::bstr::BStr;
+use crate::bytes_ext::BytesExt;
 
 use crate::interface::connection::ConnectionId;
 use crate::interface::connection::IConnectionStore;

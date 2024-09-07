@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::acl::AclCategory;
 use super::InputValue;
 use super::Interrupt;
-use crate::bstr::BStr;
+use crate::bytes_ext::BytesExt;
 use crate::interface::database::map::{Key, MapAllCommands, MapMiscCommands, MapStringCommands};
 use crate::interface::types::OutputValue;
 

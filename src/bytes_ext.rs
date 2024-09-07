@@ -1,5 +1,5 @@
 use std::str::FromStr;
-pub trait BStr {
+pub trait BytesExt {
     // required methods
     fn parse_into<T: FromStr>(&self) -> Option<T>;
     fn to_str(&self) -> Option<&str>;
@@ -7,7 +7,7 @@ pub trait BStr {
     fn to_redis_error(&self) -> Vec<u8>;
 }
 
-impl<S: AsRef<[u8]>> BStr for S {
+impl<S: AsRef<[u8]>> BytesExt for S {
     fn parse_into<T: FromStr>(&self) -> Option<T> {
         std::str::from_utf8(self.as_ref())
             .ok()

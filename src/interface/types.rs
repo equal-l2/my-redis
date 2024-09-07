@@ -1,4 +1,4 @@
-use crate::bstr::BStr;
+use crate::bytes_ext::BytesExt;
 
 pub type InputValue = Vec<u8>;
 

@@ -2,13 +2,13 @@ use smol::net::TcpListener;
 use smol::net::TcpStream;
 use smol::prelude::*;
 
-mod bstr;
+mod bytes_ext;
 mod implementation;
 mod interface;
 mod parser;
 mod wrapper;
 
-use bstr::BStr;
+use bytes_ext::BytesExt;
 use interface::types::InputValue;
 use parser::ParsedValue;
 use parser::Parser;
